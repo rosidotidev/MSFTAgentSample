@@ -1,0 +1,8 @@
+# Minimal setup commands with pinned versions
+# Python 3.12 required
+
+pipenv --python 3.12
+pipenv install agent-framework==1.0.1
+pipenv install agent-framework-openai==1.0.1
+pipenv install python-dotenv==1.2.2
+pipenv install mcp-atlassian==0.21.1
