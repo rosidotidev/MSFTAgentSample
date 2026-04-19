@@ -32,8 +32,6 @@ The pipeline is fully automated: point it at a Markdown backlog and it provision
 |:---:|:---:|:---:|
 | ![Jira Epic and Stories](docs/images/jira-epic-stories.png) | ![Console Output](docs/images/console-output.png) | ![Execution Report](docs/images/execution-report.png) |
 
-> **Note**: Replace the placeholder images in `docs/images/` with your own screenshots.
-
 ---
 
 ## Key Design Decisions
