@@ -30,7 +30,7 @@ The pipeline is fully automated: point it at a Markdown backlog and it provision
 
 | Jira Board | Console Output | Execution Report |
 |:---:|:---:|:---:|
-| ![Jira Epic and Stories](docs/images/jira-epic-stories.png) | ![Console Output](docs/images/console-output.png) | ![Execution Report](docs/images/execution-report.png) |
+| ![Jira Epic and Stories](docs/images/jira_result.png) | ![Console Output](docs/images/console_output.png) | ![Execution Report](docs/images/execution_report.png) |
 
 ---
 
