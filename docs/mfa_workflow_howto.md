@@ -16,11 +16,12 @@
    - [Events](#3-events)
    - [Workflow Builder & Execution](#4-workflow-builder--execution)
 5. [Agents in Workflows](#agents-in-workflows)
-6. [State Management](#state-management)
-7. [Human-in-the-Loop (HITL)](#human-in-the-loop-hitl)
-8. [Installation & Prerequisites](#installation--prerequisites)
-9. [Quick Reference Cheat Sheet](#quick-reference-cheat-sheet)
-10. [Further Resources](#further-resources)
+6. [Communication Between Executors: Messages vs State](#communication-between-executors-messages-vs-state)
+7. [State Management](#state-management)
+8. [Human-in-the-Loop (HITL)](#human-in-the-loop-hitl)
+9. [Installation & Prerequisites](#installation--prerequisites)
+10. [Quick Reference Cheat Sheet](#quick-reference-cheat-sheet)
+11. [Further Resources](#further-resources)
 
 ---
 
@@ -172,7 +173,7 @@ class OutputExecutor(Executor):
 
 ### 2. Edges
 
-Edges define how messages flow between executors — they are the connections in the workflow graph.
+Edges define how messages flow between executors — they are the connections in the workflow graph. When an executor calls `await ctx.send_message(data)`, the framework routes that data along the edges defined in `WorkflowBuilder` to the connected target executor(s). The data becomes the first argument of the target's `@handler` method.
 
 #### Edge Types Summary
 
@@ -494,6 +495,61 @@ async for event in workflow.run("Write a slogan for an electric SUV.", stream=Tr
         update = event.data
         print(f"{update.author_name}: {update.text}", end="", flush=True)
 ```
+
+---
+
+## Communication Between Executors: Messages vs State
+
+Executors have two distinct mechanisms for passing data, and they serve different purposes.
+
+### Messages (`ctx.send_message`)
+
+When an executor calls `await ctx.send_message(data)`, the data travels along the **edges** defined in `WorkflowBuilder`. Only the executor(s) directly connected via `add_edge` receive it — the data becomes the first argument of the next executor's `@handler` method.
+
+```python
+class StepA(Executor):
+    @handler
+    async def handle(self, input: str, ctx: WorkflowContext[str]) -> None:
+        result = do_something(input)
+        await ctx.send_message(result)  # only StepB receives this
+
+class StepB(Executor):
+    @handler
+    async def handle(self, data: str, ctx: WorkflowContext[str]) -> None:
+        # 'data' is exactly what StepA passed to send_message
+        ...
+```
+
+**Messages are for contiguous executors** — they carry data along a single edge.
+
+### Shared State (`ctx.set_state` / `ctx.get_state`)
+
+State is a key-value store that **persists for the entire workflow execution**. Any executor, regardless of its position in the graph, can read or write to it.
+
+```python
+class StepA(Executor):
+    @handler
+    async def handle(self, input: str, ctx: WorkflowContext[str]) -> None:
+        result = do_something(input)
+        ctx.set_state("extraction", result)     # available to ALL nodes
+        await ctx.send_message(result)           # available to NEXT node only
+
+class StepC(Executor):
+    @handler
+    async def handle(self, trigger: str, ctx: WorkflowContext[str]) -> None:
+        # StepC is two edges away from StepA, but can still read its data
+        extraction = ctx.get_state("extraction")
+        ...
+```
+
+### When to Use Which
+
+| Mechanism | Scope | Lifetime | Use When |
+|---|---|---|---|
+| `send_message` | Next executor(s) on the edge | Single hop | Passing data to the immediately next step |
+| `set_state` / `get_state` | Entire workflow | Full execution | A downstream (non-adjacent) node needs the data |
+
+A common pattern is to **use both together**: `send_message` for the next node in the chain, and `set_state` so that nodes further downstream can also access the same data without it having to flow through intermediate nodes that don't need it.
 
 ---
 
