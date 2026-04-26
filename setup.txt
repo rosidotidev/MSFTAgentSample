@@ -6,3 +6,7 @@ pipenv install agent-framework==1.0.1
 pipenv install agent-framework-openai==1.0.1
 pipenv install python-dotenv==1.2.2
 pipenv install mcp-atlassian==0.21.1
+
+# doc_ingest pipeline
+pipenv install python-docx
+pipenv install unstructured
