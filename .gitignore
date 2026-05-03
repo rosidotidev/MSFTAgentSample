@@ -2,7 +2,7 @@
 .env
 .env.*
 
-# GitHub Copilot instructions (internal use only)
+# GitHub Copilot customization (local only)
 .github/
 
 # Python
@@ -41,3 +41,11 @@ output/
 
 # Temporary files
 tmp/
+
+# Wiki data (user-configurable location)
+wiki_one/
+**/wiki/
+
+# Questions (auto-generated content)
+**/questions_pending/
+**/questions_approved/
