@@ -197,6 +197,50 @@ Clears all wiki pages, index, and log. Source files in `raw/` are preserved.
 
 ---
 
+## Testing
+
+Tests live in `wiki_llm_maf/tests/` and are split into two tiers separated by a `@pytest.mark.e2e` marker.
+
+### Unit tests (deterministic, no API key needed)
+
+```bash
+# All unit tests — fast, free, no network
+pipenv run pytest wiki_llm_maf/tests/ -m "not e2e" -v
+```
+
+Covers: Scanner, WriteValidator, IndexUpdater, deterministic lint.
+
+### E2E tests (real LLM calls, requires OPENAI_API_KEY)
+
+```bash
+# All E2E tests (~$0.05-0.10 in API costs)
+pipenv run pytest wiki_llm_maf/tests/ -m e2e -v
+
+# Only ingest E2E
+pipenv run pytest wiki_llm_maf/tests/test_e2e_ingest.py -v
+
+# Only query E2E
+pipenv run pytest wiki_llm_maf/tests/test_e2e_query.py -v
+
+# Only lint E2E
+pipenv run pytest wiki_llm_maf/tests/test_e2e_lint.py -v
+
+# A single test method
+pipenv run pytest wiki_llm_maf/tests/test_e2e_ingest.py::TestE2EIngest::test_ingest_creates_pages -v
+```
+
+### Filtering with `-k`
+
+```bash
+# Run only tests with "scanner" in the name
+pipenv run pytest wiki_llm_maf/tests/ -k "scanner" -v
+
+# Run only tests with "broken" in the name
+pipenv run pytest wiki_llm_maf/tests/ -k "broken" -v
+```
+
+---
+
 ## Key Design Decisions
 
 - **Agentic loops over fat prompts** — agents explore the wiki on-demand via tool calls instead of receiving all pages in context. This keeps the system scalable regardless of wiki size.

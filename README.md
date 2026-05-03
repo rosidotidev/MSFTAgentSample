@@ -109,6 +109,7 @@ cd MSFTAgentSample
 ```bash
 pipenv --python 3.12
 pipenv install
+pipenv install --dev   # pytest, pytest-asyncio (for running tests)
 ```
 
 Or install manually:
