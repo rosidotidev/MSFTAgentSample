@@ -1,16 +1,8 @@
 """Agent: the wiki writer — executes the integration plan page by page."""
 
-import os
-
 from agent_framework import Agent
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SCHEMA_PATH = os.path.join(_BASE_DIR, "schema.md")
-
-
-def _load_schema() -> str:
-    with open(_SCHEMA_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+from ._schema import load_full_schema
 
 
 INSTRUCTIONS = """\
@@ -52,7 +44,7 @@ After writing each page, respond with a brief confirmation: "Written: <path>"
 
 def create_agent(client, options, tools):
     """Create the WikiWriterAgent."""
-    schema = _load_schema()
+    schema = load_full_schema()
     instructions = INSTRUCTIONS.replace("__SCHEMA__", schema)
     return Agent(
         name="WikiWriterAgent",

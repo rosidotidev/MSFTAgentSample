@@ -1,16 +1,6 @@
 """Agent: wiki querier — answers questions by exploring the wiki."""
 
-import os
-
 from agent_framework import Agent
-
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SCHEMA_PATH = os.path.join(_BASE_DIR, "schema.md")
-
-
-def _load_schema() -> str:
-    with open(_SCHEMA_PATH, "r", encoding="utf-8") as f:
-        return f.read()
 
 
 INSTRUCTIONS = """\
@@ -36,9 +26,9 @@ WORKFLOW:
 CONSTRAINTS — MANDATORY, NO EXCEPTIONS:
 - If a fact is NOT written in a wiki page you read → DO NOT include it in your answer.
 - If the wiki does not answer the question → reply ONLY: \
-  "La wiki non contiene informazioni su questo argomento." (or equivalent in the user's language)
+  "The wiki does not contain information on this topic." (translated to the user's language)
 - If pages mention the topic but lack details → reply: \
-  "La wiki menziona [topic] ma non include [dettaglio richiesto]."
+  "The wiki mentions [topic] but does not include [requested detail]." (translated to the user's language)
 - DO NOT use your training data. DO NOT synthesize. DO NOT infer. DO NOT generate examples.
 - DO NOT write numbered lists of steps unless those steps are literally in a wiki page.
 - Answer in the user's language. Cite with [[category/slug]].

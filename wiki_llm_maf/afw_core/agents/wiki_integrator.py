@@ -3,17 +3,9 @@
 Explores the wiki on-demand and produces an integration plan.
 """
 
-import os
-
 from agent_framework import Agent
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SCHEMA_PATH = os.path.join(_BASE_DIR, "schema.md")
-
-
-def _load_schema() -> str:
-    with open(_SCHEMA_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+from ._schema import load_schema
 
 
 INSTRUCTIONS = """\
@@ -91,7 +83,7 @@ __SCHEMA__
 
 def create_agent(client, options, tools):
     """Create the WikiIntegratorAgent."""
-    schema = _load_schema()
+    schema = load_schema("core")
     instructions = INSTRUCTIONS.replace("__SCHEMA__", schema)
     return Agent(
         name="WikiIntegratorAgent",

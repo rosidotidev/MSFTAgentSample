@@ -4,6 +4,8 @@
 > Agents read this to know how pages should be structured.
 > It does NOT contain workflow logic or orchestration instructions.
 
+<!-- SECTION:core -->
+
 ## Language Rule
 
 All wiki content MUST be written in **English**, regardless of the language of the source
@@ -50,6 +52,21 @@ sources: ["source-slug-1", "source-slug-2"]
 - `sources` lists the source slugs that contributed to this page.
 
 ---
+
+## Wikilink Format
+
+Always use: `[[category/slug]]`
+
+Examples:
+- `[[sources/karpathy-llm-wiki]]`
+- `[[entities/openai]]`
+- `[[concepts/rag]]`
+
+<!-- /SECTION:core -->
+
+---
+
+<!-- SECTION:templates -->
 
 ## Source Page (`wiki/sources/<slug>.md`)
 
@@ -153,18 +170,11 @@ sources: ["source-slug-1", "source-slug-2"]
 <Full answer content with [[wikilinks]] citations>
 ```
 
----
-
-## Wikilink Format
-
-Always use: `[[category/slug]]`
-
-Examples:
-- `[[sources/karpathy-llm-wiki]]`
-- `[[entities/openai]]`
-- `[[concepts/rag]]`
+<!-- /SECTION:templates -->
 
 ---
+
+<!-- SECTION:index-log -->
 
 ## Index Format (`wiki/index.md`)
 
@@ -197,6 +207,8 @@ Each entry:
 <brief description of what was done>
 Pages touched: <list>
 ```
+
+<!-- /SECTION:index-log -->
 
 ---
 
