@@ -18,6 +18,16 @@ A workflow-based pipeline that extracts content and images from `.docx` files, a
 
 → **[PIPELINE_DOCX_TO_MD.md](PIPELINE_DOCX_TO_MD.md)**
 
+### LLM Wiki (experimental)
+
+A first implementation of [Andrej Karpathy's LLM Wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f): an LLM-powered, markdown-based, evergreen knowledge base. Sources are ingested and integrated into a wiki of interconnected pages (entities, concepts, synthesis). Three workflows — **ingest**, **query**, **lint** — each use agentic loops with tool calls to explore and evolve the wiki incrementally.
+
+> **Status**: experimental. The core pipeline works end-to-end (ingest → query → lint with pending/approved flow), but agent prompts, deduplication heuristics, and remediation logic still need tuning and hardening. See [BACKLOG_KARPATHY_GAPS.md](docs/BACKLOG_KARPATHY_GAPS.md) for the gap analysis and [SPEC_LLM_WIKI.md](docs/SPEC_LLM_WIKI.md) for the full technical specification.
+
+Code lives in `wiki_llm_maf/`; wiki data in a configurable `WIKI_ROOT_DIR`.
+
+→ **[PIPELINE_WIKI_LLM.md](PIPELINE_WIKI_LLM.md)**
+
 ---
 
 ## Entry Points Catalog
@@ -53,6 +63,14 @@ MSFTAgentSample/
 ├── input/                  # Input files (backlogs, .docx documents)
 ├── output/                 # Generated output (reports, Markdown docs)
 ├── docs/                   # Documentation and reference material
+│
+├── wiki_llm_maf/           # LLM Wiki pipeline (experimental)
+│   ├── afw_core/           # Agents, executors, tools, models for wiki workflows
+│   ├── raw/                # Source documents for ingestion
+│   ├── main_ingest.py      # Entry point: ingest new sources
+│   ├── main_query.py       # Entry point: query the wiki
+│   ├── main_lint.py        # Entry point: wiki health check
+│   └── schema.md           # Wiki page format reference
 │
 ├── main_*.py               # Entry point scripts (see catalog above)
 ├── .env                    # Environment variables
