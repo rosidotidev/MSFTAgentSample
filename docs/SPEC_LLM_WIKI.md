@@ -64,13 +64,26 @@ Third-party loggers (`httpx`, `openai`, `httpcore`) are suppressed to `WARNING` 
 
 `schema.md` is a **format reference**, not a program. In a conversational setup (e.g. Claude Code), a CLAUDE.md file acts as the entire orchestration layer — telling the LLM what to do, when, and how. In our agentic solution, orchestration lives in Python code (the workflow), and agent behavior lives in each agent's `INSTRUCTIONS`. 
 
-`schema.md` has one job: define what wiki pages look like. It is injected into the prompts of the Integrator and Writer agents so they know:
-- Required YAML frontmatter fields per page type
-- Body structure (headings, sections)
-- Wikilink format (`[[category/slug]]`)
-- Provenance conventions ("From [[source]]" sections)
+`schema.md` has one job: define what wiki pages look like. It is **sectioned** with HTML markers (`<!-- SECTION:name -->`) so that each agent can load only the sections it needs:
 
-It does NOT contain workflow logic, agent behavior rules, or orchestration instructions.
+| Section | Content | Used by |
+|---------|---------|---------|
+| `core` | Language rule, directory layout, frontmatter, wikilink format | Integrator |
+| `templates` | Page body templates (source, entity, concept, synthesis) | Writer |
+| `index-log` | Index and log format conventions | Writer |
+
+The shared helper `afw_core/agents/_schema.py` provides two functions:
+- `load_schema(*sections)` — loads specific sections by marker name
+- `load_full_schema()` — loads all sections (core + templates + index-log)
+
+Agent-specific injection:
+- **WikiIntegrator** → `load_schema("core")` — only needs format rules to plan, not full templates
+- **WikiWriter** → `load_full_schema()` — needs everything to produce correct pages
+- **WikiQuerier** → no schema — it reads existing pages, it doesn't create them
+
+This keeps prompt size bounded: the Integrator (which already carries the extraction + tool results) avoids ~60% of the schema payload.
+
+`schema.md` does NOT contain workflow logic, agent behavior rules, or orchestration instructions.
 
 ### wiki/ structure
 ```
@@ -138,10 +151,12 @@ wiki_llm_mfa/                       ← Project root (code)
   main_ingest.py                    ← Entry point: ingest new sources
   main_query.py                     ← Entry point: answer questions
   main_lint.py                      ← Entry point: wiki health check
-  schema.md                         ← Page format reference
+  schema.md                         ← Page format reference (sectioned)
+  pytest.ini                        ← Test configuration
   .env.example                      ← Environment variable template
   afw_core/
     agents/                         ← Agent definitions (instructions + factory)
+      _schema.py                    ← Shared helper: loads schema sections by marker
       source_reader.py
       wiki_integrator.py
       wiki_writer.py
@@ -165,6 +180,15 @@ wiki_llm_mfa/                       ← Project root (code)
       integration_plan.py
     workflows/                      ← Workflow definitions
       ingest.py
+  tests/                            ← Test suite
+    conftest.py                     ← Shared fixtures (wiki_root, e2e_wiki_root)
+    test_scanner.py                 ← Unit: Scanner idempotency
+    test_index_updater.py           ← Unit: IndexUpdater deterministic rebuild
+    test_write_validator.py         ← Unit: WriteValidator checks
+    test_deterministic_lint.py      ← Unit: broken links, orphans, frontmatter
+    test_e2e_ingest.py              ← E2E: full ingest cycle (mocked LLM)
+    test_e2e_lint.py                ← E2E: lint pipeline
+    test_e2e_query.py               ← E2E: query pipeline
 
 <WIKI_ROOT_DIR>/                    ← Data root (configurable via .env)
   raw/                              ← Immutable source documents
@@ -604,7 +628,28 @@ Note: each "From [[source]]" section keeps provenance clear. This is the **prove
 
 ---
 
-## 13. Open Questions (to decide together)
+## 13. Testing Strategy
+
+The test suite lives in `wiki_llm_maf/tests/` and uses `pytest`. Tests are split into two categories:
+
+### Unit Tests (no LLM, fast)
+Test deterministic components in isolation:
+- **Scanner** — idempotency (skips already-ingested files via log check)
+- **IndexUpdater** — rebuilds `index.md` deterministically from wiki pages on disk
+- **WriteValidator** — validates wikilinks, frontmatter, content presence
+- **Deterministic Lint** — broken links, orphan pages, missing frontmatter
+
+### E2E Tests (mocked LLM)
+Test full workflow pipelines with mocked `agent.run()` returning realistic structured outputs:
+- **Ingest E2E** — Scanner → Reader → Integrator → Writer → Validator → IndexUpdater
+- **Query E2E** — Querier → answer filing to `questions_pending/`
+- **Lint E2E** — deterministic phase + semantic phase → `lint_pending/`
+
+Fixtures (`conftest.py`) provide isolated `tmp_path`-based wiki roots with minimal scaffolding, ensuring tests never touch the real wiki data.
+
+---
+
+## 14. Open Questions (to decide together)
 
 - [x] Claim granularity: per-claim tracking with hashes, or trust context?
 - [x] Automatic lint post-ingest or only on-demand? On-demand only. WriteValidator handles immediate checks.

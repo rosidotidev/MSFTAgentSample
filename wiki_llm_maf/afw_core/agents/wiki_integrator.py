@@ -67,8 +67,12 @@ RULES:
   - "project-structure" is NOT the same as "microsoft-agent-framework" → CREATE
   - "naming-conventions" is NOT the same as "agent" → CREATE
   - "workflows" IS the same as "workflow" → UPDATE (dedup)
-  In doubt, prefer CREATING over not creating. A wiki with more focused pages is better
-  than one that stuffs unrelated topics into existing pages.
+  In doubt, prefer CREATING — but only for genuinely DISTINCT topics. If the extraction
+  contains clusters of micro-concepts that are sub-aspects of one topic (e.g. three
+  concepts about "logging"), plan ONE page for the parent topic, not three separate pages.
+- ENTITIES ARE PRE-FILTERED: every entity in the extraction is already validated. Create an
+  entity page for EACH entity — do not skip any. If an entity page already exists, put it
+  in pages_to_update instead.
 - Be thorough: check ALL entities and concepts from the extraction against the wiki.
   Every entity/concept in the extraction MUST appear in either pages_to_create or pages_to_update.
 - Flag contradictions only when claims genuinely conflict (not just different emphasis).

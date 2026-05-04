@@ -1,10 +1,9 @@
 """Configurable logging for the wiki system.
 
-Reads WIKI_LOG_LEVEL from environment. Levels:
-  ERROR  — only failures
-  WARNING — failures + warnings
-  INFO   — executor start/end + summaries (default)
-  DEBUG  — full payloads in/out of each executor + timing
+Reads from environment:
+  WIKI_LOG_LEVEL — standard log verbosity (ERROR|WARNING|INFO|DEBUG). Default: INFO
+  WIKI_MONITOR  — if "true", dump intermediate artifacts (extraction, plan, writer input)
+                  to <WIKI_ROOT_DIR>/tmp/diagnostics/ for post-mortem inspection.
 """
 
 import logging
@@ -25,3 +24,19 @@ def setup_logging() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+
+def is_monitor_enabled() -> bool:
+    """Check if WIKI_MONITOR mode is active."""
+    return os.environ.get("WIKI_MONITOR", "").lower() in ("true", "1", "yes")
+
+
+def get_diagnostics_dir() -> str:
+    """Return the diagnostics dump directory, creating it if needed."""
+    base = os.environ.get(
+        "WIKI_ROOT_DIR",
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+    dump_dir = os.path.join(base, "tmp", "diagnostics")
+    os.makedirs(dump_dir, exist_ok=True)
+    return dump_dir
