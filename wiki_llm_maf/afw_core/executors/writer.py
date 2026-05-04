@@ -39,10 +39,21 @@ def _read_file(path: str) -> str | None:
         return f.read()
 
 
-def _build_connections_from_claims(extraction: dict) -> dict[str, set[str]]:
-    """Build a map: slug -> set of connected slugs, using claims as bridges.
+_MAX_CONNECTION_DESC = 120
 
-    If entity A and concept B share a claim, they are connected.
+
+def _truncate(text: str, max_len: int = _MAX_CONNECTION_DESC) -> str:
+    """Truncate text to max_len, adding ellipsis if needed."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _build_connections_from_claims(extraction: dict) -> dict[str, dict[str, str]]:
+    """Build a map: slug -> {connected_slug: relationship_description}.
+
+    Uses claim text as the relationship description between co-occurring items.
+    If multiple claims bridge the same pair, keeps the shortest (most concise).
     """
     claims = extraction.get("claims", [])
     entities = extraction.get("entities", [])
@@ -59,8 +70,8 @@ def _build_connections_from_claims(extraction: dict) -> dict[str, set[str]]:
         concept_name_to_slug[c.get("name", "")] = f"concepts/{c.get('slug', '')}"
         concept_name_to_slug[c.get("slug", "")] = f"concepts/{c.get('slug', '')}"
 
-    # For each claim, collect all entity/concept slugs mentioned
-    claim_groups: list[set[str]] = []
+    # For each claim, collect all entity/concept slugs mentioned + claim text
+    claim_groups: list[tuple[set[str], str]] = []
     for claim in claims:
         group: set[str] = set()
         for ename in claim.get("entities", []):
@@ -72,17 +83,64 @@ def _build_connections_from_claims(extraction: dict) -> dict[str, set[str]]:
             if path:
                 group.add(path)
         if len(group) > 1:
-            claim_groups.append(group)
+            claim_groups.append((group, claim.get("text", "")))
 
-    # Build adjacency: if two items share a claim, they're connected
-    connections: dict[str, set[str]] = {}
-    for group in claim_groups:
-        for item in group:
-            if item not in connections:
-                connections[item] = set()
-            connections[item].update(group - {item})
+    # Build adjacency with descriptions: keep shortest claim text per pair
+    connections: dict[str, dict[str, str]] = {}
+    for group, claim_text in claim_groups:
+        items = list(group)
+        for i, a in enumerate(items):
+            for b in items[i + 1:]:
+                # a → b
+                if a not in connections:
+                    connections[a] = {}
+                existing_desc = connections[a].get(b, "")
+                if not existing_desc or (claim_text and len(claim_text) < len(existing_desc)):
+                    connections[a][b] = _truncate(claim_text)
+                # b → a
+                if b not in connections:
+                    connections[b] = {}
+                existing_desc = connections[b].get(a, "")
+                if not existing_desc or (claim_text and len(claim_text) < len(existing_desc)):
+                    connections[b][a] = _truncate(claim_text)
 
     return connections
+
+
+def _parse_existing_connections(content: str) -> dict[str, str]:
+    """Parse ## Connections section from existing page content.
+
+    Returns {slug_path: description} from lines like:
+    - [[entities/foo]] — some description
+    - [[concepts/bar]]
+    """
+    connections: dict[str, str] = {}
+    in_section = False
+    for line in content.split("\n"):
+        if line.strip() == "## Connections":
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith("## "):
+                break
+            m = re.match(r"- \[\[(.+?)\]\](?:\s*—\s*(.*))?", line)
+            if m:
+                connections[m.group(1)] = (m.group(2) or "").strip()
+    return connections
+
+
+def _render_connections_section(conn: dict[str, str]) -> list[str]:
+    """Render a sorted ## Connections section from a slug→description map."""
+    if not conn:
+        return []
+    lines = ["", "## Connections"]
+    for slug in sorted(conn.keys()):
+        desc = conn[slug]
+        if desc:
+            lines.append(f"- [[{slug}]] — {desc}")
+        else:
+            lines.append(f"- [[{slug}]]")
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +196,7 @@ def _render_source_page(extraction: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, set[str]]) -> str:
+def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, dict[str, str]]) -> str:
     slug = entity.get("slug", "unknown")
     name = entity.get("name", slug)
     etype = entity.get("type", "other")
@@ -146,7 +204,7 @@ def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, set[
     content = entity.get("content", "")
     today = _today()
 
-    connections = sorted(conn_map.get(f"entities/{slug}", set()))
+    conn = conn_map.get(f"entities/{slug}", {})
 
     lines = [
         "---",
@@ -165,23 +223,19 @@ def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, set[
         content,
     ]
 
-    if connections:
-        lines.append("")
-        lines.append("## Connections")
-        for c in connections:
-            lines.append(f"- [[{c}]]")
+    lines.extend(_render_connections_section(conn))
 
     return "\n".join(lines) + "\n"
 
 
-def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, set[str]]) -> str:
+def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, dict[str, str]]) -> str:
     slug = concept.get("slug", "unknown")
     name = concept.get("name", slug)
     definition = concept.get("definition", "")
     content = concept.get("content", "")
     today = _today()
 
-    connections = sorted(conn_map.get(f"concepts/{slug}", set()))
+    conn = conn_map.get(f"concepts/{slug}", {})
 
     lines = [
         "---",
@@ -199,17 +253,13 @@ def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, se
         content,
     ]
 
-    if connections:
-        lines.append("")
-        lines.append("## Connections")
-        for c in connections:
-            lines.append(f"- [[{c}]]")
+    lines.extend(_render_connections_section(conn))
 
     return "\n".join(lines) + "\n"
 
 
 def _render_update(existing_content: str, extraction: dict, entry: dict, source_slug: str) -> str:
-    """Append a new 'From source' section to an existing page."""
+    """Append a new 'From source' section and merge Connections."""
     path = entry["path"]
     slug = path.rsplit("/", 1)[-1].replace(".md", "")
     page_type = "entity" if "/entities/" in path else "concept"
@@ -233,7 +283,39 @@ def _render_update(existing_content: str, extraction: dict, entry: dict, source_
             updated,
         )
 
-    return updated.rstrip() + new_section
+    # --- Merge Connections ---
+    # Parse existing connections from page
+    existing_conn = _parse_existing_connections(updated)
+
+    # Build new connections from current extraction
+    conn_map = _build_connections_from_claims(extraction)
+    page_key = f"{page_type.replace('entity', 'entities').replace('concept', 'concepts')}/{slug}"
+    new_conn = conn_map.get(page_key, {})
+
+    # Merge: new descriptions win on conflict
+    merged = {**existing_conn, **new_conn}
+
+    # Remove old Connections section from content
+    lines = updated.split("\n")
+    result_lines: list[str] = []
+    skip = False
+    for line in lines:
+        if line.strip() == "## Connections":
+            skip = True
+            continue
+        if skip and line.startswith("## "):
+            skip = False
+        if not skip:
+            result_lines.append(line)
+
+    updated = "\n".join(result_lines).rstrip() + new_section
+
+    # Append merged connections at the end
+    conn_lines = _render_connections_section(merged)
+    if conn_lines:
+        updated = updated.rstrip() + "\n" + "\n".join(conn_lines) + "\n"
+
+    return updated
 
 
 # ---------------------------------------------------------------------------

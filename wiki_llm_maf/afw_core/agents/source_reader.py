@@ -67,6 +67,10 @@ GENERAL RULES:
 - concepts[].content must contain FULL explanations + code blocks from the source, reorganized per concept.
 - A single code block may appear in MULTIPLE entities/concepts if relevant to both. Duplicate it.
 - Slugs: lowercase, hyphens, no special characters.
+- GRANULARITY: For each topic, extract ONE entry at the most useful granularity level. \
+  Do NOT extract both a general concept and its sub-aspect as separate items \
+  (e.g., do NOT produce both "workflow" and "workflow-definitions" — choose the one that best \
+  captures the source content). Prefer the more specific name when the source goes into detail.
 - Return ONLY the JSON object.
 """
 

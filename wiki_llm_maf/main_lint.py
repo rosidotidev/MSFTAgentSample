@@ -130,7 +130,7 @@ async def main():
     agent = wiki_linter.create_agent(client, options, tools)
 
     result = await agent.run("Perform a full semantic lint of the wiki.")
-    raw_output = result.final_output if hasattr(result, "final_output") else str(result)
+    raw_output = result.text
 
     # Parse LLM suggestions
     import json

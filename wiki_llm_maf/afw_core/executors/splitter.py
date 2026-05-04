@@ -64,7 +64,7 @@ async def split_document_with_llm(content: str, title: str, client, options) -> 
     prompt = f"DOCUMENT: {title}\nTOTAL LINES: {len(lines)}\n\nOUTLINE:\n{outline}"
     result = await agent.run(prompt)
 
-    text = result.final_output.strip()
+    text = result.text.strip()
     # Parse the JSON array
     if text.startswith("```"):
         text = "\n".join(text.split("\n")[1:])

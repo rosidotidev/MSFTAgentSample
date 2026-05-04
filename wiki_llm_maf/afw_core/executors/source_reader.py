@@ -60,13 +60,13 @@ class SourceReaderExecutor(Executor):
             prompt = f"FILE: {fname} (chunk {i+1}/{len(chunks)})\n\n{chunk}"
             try:
                 result = await agent.run(prompt, options={"response_format": SourceExtraction})
-                ext = result.value.model_dump() if result.value else json.loads(result.final_output)
+                ext = result.value.model_dump() if result.value else json.loads(result.text)
             except Exception as e:
                 logger.warning("Chunk %d/%d structured extraction failed (%s), retrying without response_format",
                                i+1, len(chunks), type(e).__name__)
                 agent2 = source_reader.create_agent(self._client, self._options)
                 result = await agent2.run(prompt)
-                text = result.final_output.strip()
+                text = result.text.strip()
                 if text.startswith("```"):
                     text = "\n".join(text.split("\n")[1:])
                 if text.endswith("```"):

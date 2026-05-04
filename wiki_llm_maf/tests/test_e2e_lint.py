@@ -65,7 +65,7 @@ class TestE2ELint:
         agent = wiki_linter.create_agent(client, options, tools)
 
         result = await agent.run("Perform a full semantic lint of the wiki.")
-        raw_output = result.final_output if hasattr(result, "final_output") else str(result)
+        raw_output = result.text
 
         # Should produce a non-empty output (JSON array or text)
         assert len(raw_output.strip()) > 10, "Expected non-empty linter output"

@@ -97,7 +97,7 @@ async def main():
             f"Do NOT add information that is not in the pages."
         )
         result = await agent.run(prompt)
-        answer = result.final_output if hasattr(result, "final_output") else str(result)
+        answer = result.text
         print(f"\nA: {answer}\n")
 
         # Save to questions_pending/

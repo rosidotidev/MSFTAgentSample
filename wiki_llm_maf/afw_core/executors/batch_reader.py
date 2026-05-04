@@ -44,7 +44,7 @@ class BatchReaderExecutor(Executor):
                 result = await agent.run(prompt)
 
                 # Parse JSON from agent response
-                text = result.final_output if hasattr(result, "final_output") else str(result)
+                text = result.text
                 # Strip markdown fences if present
                 text = text.strip()
                 if text.startswith("```"):

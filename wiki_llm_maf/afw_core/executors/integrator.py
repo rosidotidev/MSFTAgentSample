@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 
 from agent_framework import Agent, Executor, handler, WorkflowContext
@@ -45,6 +46,52 @@ Respond with ONLY a valid JSON object (no markdown fences, no commentary):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _normalize_slug(slug: str) -> str:
+    """Normalize a slug for comparison: camelCase/PascalCase/underscores → kebab-case.
+
+    Examples:
+        openaiChatClient → openai-chat-client
+        openai_chat_client → openai-chat-client
+        OpenAIChatClient → open-ai-chat-client  (close enough for matching)
+    """
+    # Split camelCase/PascalCase
+    s = _CAMEL_RE.sub("-", slug)
+    # Replace underscores with hyphens
+    s = s.replace("_", "-")
+    # Lowercase, collapse multiple hyphens, strip edges
+    s = re.sub(r"-+", "-", s.lower()).strip("-")
+    return s
+
+
+def _pre_filter_slugs(
+    new_slugs: list[str], existing_slugs: list[str]
+) -> tuple[dict[str, str], list[str]]:
+    """Deterministically match new slugs to existing ones via normalization.
+
+    Returns:
+        auto_map: {new_slug: existing_slug} for deterministic matches
+        remaining: new slugs that need LLM mapping
+    """
+    existing_normalized = {_normalize_slug(s): s for s in existing_slugs}
+    auto_map: dict[str, str] = {}
+    remaining: list[str] = []
+
+    for slug in new_slugs:
+        norm = _normalize_slug(slug)
+        if norm in existing_normalized and existing_normalized[norm] != slug:
+            auto_map[slug] = existing_normalized[norm]
+        elif slug in existing_slugs:
+            # Exact match — will be caught as existing, route to update
+            auto_map[slug] = slug
+        else:
+            remaining.append(slug)
+
+    return auto_map, remaining
+
 
 def _wiki_base_dir() -> str:
     default = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -101,7 +148,7 @@ async def _llm_slug_mapping(
     )
 
     result = await agent.run(prompt)
-    text = result.final_output.strip()
+    text = result.text.strip()
 
     # Strip markdown fences if present
     if text.startswith("```"):
@@ -183,20 +230,36 @@ class IntegratorExecutor(Executor):
         has_existing = existing_entity_slugs or existing_concept_slugs
         has_new = new_entity_slugs or new_concept_slugs
 
-        if has_existing and has_new and self._client:
-            logger.info(
-                "LLM slug mapping: %d+%d new vs %d+%d existing",
-                len(new_entity_slugs), len(new_concept_slugs),
-                len(existing_entity_slugs), len(existing_concept_slugs),
-            )
-            mapping = await _llm_slug_mapping(
-                self._client, self._options,
-                new_entity_slugs, new_concept_slugs,
-                existing_entity_slugs, existing_concept_slugs,
-            )
-            entity_map = mapping.get("entity_mapping", {})
-            concept_map = mapping.get("concept_mapping", {})
-            logger.info("Mapping result: %s", json.dumps(mapping))
+        if has_existing and has_new:
+            # Phase 1: deterministic pre-filter (normalize slugs)
+            entity_auto, entity_remaining = _pre_filter_slugs(new_entity_slugs, existing_entity_slugs)
+            concept_auto, concept_remaining = _pre_filter_slugs(new_concept_slugs, existing_concept_slugs)
+
+            if entity_auto or concept_auto:
+                logger.info(
+                    "Pre-filter matched: %d entities, %d concepts (deterministic)",
+                    len(entity_auto), len(concept_auto),
+                )
+            entity_map.update(entity_auto)
+            concept_map.update(concept_auto)
+
+            # Phase 2: LLM mapping for remaining slugs
+            if (entity_remaining or concept_remaining) and self._client:
+                logger.info(
+                    "LLM slug mapping: %d+%d remaining vs %d+%d existing",
+                    len(entity_remaining), len(concept_remaining),
+                    len(existing_entity_slugs), len(existing_concept_slugs),
+                )
+                mapping = await _llm_slug_mapping(
+                    self._client, self._options,
+                    entity_remaining, concept_remaining,
+                    existing_entity_slugs, existing_concept_slugs,
+                )
+                entity_map.update(mapping.get("entity_mapping", {}))
+                concept_map.update(mapping.get("concept_mapping", {}))
+                logger.info("Mapping result: %s", json.dumps(mapping))
+            elif entity_remaining or concept_remaining:
+                logger.info("No LLM client — remaining slugs will be created.")
         else:
             logger.info("No existing pages or no LLM — all items will be created.")
 

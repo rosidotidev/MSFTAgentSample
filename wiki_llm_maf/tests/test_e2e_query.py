@@ -46,7 +46,7 @@ class TestE2EQuery:
         agent = wiki_querier.create_agent(client, options, tools)
 
         result = await agent.run("What are Python decorators and how do they work?")
-        answer = result.final_output if hasattr(result, "final_output") else str(result)
+        answer = result.text
 
         assert len(answer) > 50, "Expected a substantive answer"
         # Should mention decorators (the source topic)
@@ -67,7 +67,7 @@ class TestE2EQuery:
 
         question = "What is functools.wraps used for?"
         result = await agent.run(question)
-        answer = result.final_output if hasattr(result, "final_output") else str(result)
+        answer = result.text
 
         # Save answer (mirroring main_query.py logic)
         import re
