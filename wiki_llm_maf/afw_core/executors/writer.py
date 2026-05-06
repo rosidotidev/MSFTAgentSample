@@ -196,7 +196,7 @@ def _render_source_page(extraction: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, dict[str, str]]) -> str:
+def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, dict[str, str]], source_prefix: str = "sources") -> str:
     slug = entity.get("slug", "unknown")
     name = entity.get("name", slug)
     etype = entity.get("type", "other")
@@ -219,7 +219,7 @@ def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, dict
         "## Overview",
         description,
         "",
-        f"## From [[sources/{source_slug}]]",
+        f"## From [[{source_prefix}/{source_slug}]]",
         content,
     ]
 
@@ -228,7 +228,7 @@ def _render_entity_page(entity: dict, source_slug: str, conn_map: dict[str, dict
     return "\n".join(lines) + "\n"
 
 
-def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, dict[str, str]]) -> str:
+def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, dict[str, str]], source_prefix: str = "sources") -> str:
     slug = concept.get("slug", "unknown")
     name = concept.get("name", slug)
     definition = concept.get("definition", "")
@@ -249,7 +249,7 @@ def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, di
         "## Definition",
         definition,
         "",
-        f"## From [[sources/{source_slug}]]",
+        f"## From [[{source_prefix}/{source_slug}]]",
         content,
     ]
 
@@ -258,7 +258,7 @@ def _render_concept_page(concept: dict, source_slug: str, conn_map: dict[str, di
     return "\n".join(lines) + "\n"
 
 
-def _render_update(existing_content: str, extraction: dict, entry: dict, source_slug: str) -> str:
+def _render_update(existing_content: str, extraction: dict, entry: dict, source_slug: str, source_prefix: str = "sources") -> str:
     """Append a new 'From source' section and merge Connections."""
     path = entry["path"]
     slug = path.rsplit("/", 1)[-1].replace(".md", "")
@@ -272,7 +272,7 @@ def _render_update(existing_content: str, extraction: dict, entry: dict, source_
             break
 
     new_content = item.get("content", "") if item else entry.get("detail", "")
-    new_section = f"\n\n## From [[sources/{source_slug}]]\n{new_content}\n"
+    new_section = f"\n\n## From [[{source_prefix}/{source_slug}]]\n{new_content}\n"
 
     today = _today()
     updated = re.sub(r'updated: "[^"]*"', f'updated: "{today}"', existing_content)
@@ -343,6 +343,7 @@ class WriterExecutor(Executor):
             return
 
         source_slug = extraction.get("slug", "unknown")
+        source_prefix = "synthesis" if extraction.get("_origin") == "questions_approved" else "sources"
         conn_map = _build_connections_from_claims(extraction)
         written_pages: list[str] = []
         t0 = time.time()
@@ -364,9 +365,9 @@ class WriterExecutor(Executor):
             if page_type in ("source", "synthesis"):
                 content = _render_source_page(extraction)
             elif page_type == "entity" and slug in entities_by_slug:
-                content = _render_entity_page(entities_by_slug[slug], source_slug, conn_map)
+                content = _render_entity_page(entities_by_slug[slug], source_slug, conn_map, source_prefix)
             elif page_type == "concept" and slug in concepts_by_slug:
-                content = _render_concept_page(concepts_by_slug[slug], source_slug, conn_map)
+                content = _render_concept_page(concepts_by_slug[slug], source_slug, conn_map, source_prefix)
             else:
                 logger.warning("No data found for %s '%s', skipping", page_type, slug)
                 continue
@@ -390,7 +391,7 @@ class WriterExecutor(Executor):
                 logger.warning("Page not found for update: %s, skipping", path)
                 continue
 
-            content = _render_update(existing, extraction, entry, source_slug)
+            content = _render_update(existing, extraction, entry, source_slug, source_prefix)
             _write_file(path, content)
             written_pages.append(path)
 

@@ -218,6 +218,24 @@ wiki_llm_mfa/                       ← Project root (code)
 **Process** (3 phases, not an ETL pipeline):
 
 #### Phase 1 — Comprehension (SourceReader)
+
+**Document Splitting (adaptive)**
+
+Before extraction, the source document is split into chunks to ensure each LLM call receives a manageable amount of content:
+
+1. **Heading-based split**: if the document has ≥ 2 `##` headings, it is split deterministically at heading boundaries.
+2. **Adaptive target**: the number of chunks is computed from the total document size: `target = ceil(total_chars / MAX_CHUNK_CHARS)`, capped at `HARD_CAP_CHUNKS`. This avoids fixed limits — small documents stay as 1 chunk, large ones scale up.
+3. **Merge pass**: if the initial heading-split produces more sections than the target, adjacent sections are merged (smallest first) until the target is reached.
+4. **LLM fallback**: if the document has no headings and exceeds 60 lines, a lightweight LLM call identifies semantic split points.
+
+| Constant | Value | Meaning |
+|----------|-------|---------|
+| `MAX_CHUNK_CHARS` | 3000 | Target max chars per chunk |
+| `HARD_CAP_CHUNKS` | 30 | Absolute max chunks (limits LLM calls) |
+| `MIN_CHUNK_LINES` | 5 | Sections shorter than this are merged into the previous |
+
+Each chunk is then extracted independently (in parallel) by the SourceReaderAgent:
+
 The LLM reads the source and produces a structured analysis:
 - Summary
 - Key takeaways

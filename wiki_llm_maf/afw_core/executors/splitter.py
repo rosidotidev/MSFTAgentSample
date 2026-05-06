@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 MIN_HEADING_COUNT = 2   # Minimum ## headings to use deterministic split
-MAX_CHUNKS = 8          # Target maximum number of output chunks
+MAX_CHUNK_CHARS = 3000  # Target max characters per chunk (adaptive sizing)
+HARD_CAP_CHUNKS = 30    # Absolute maximum number of chunks (limits LLM calls)
 MIN_CHUNK_LINES = 5     # Absolute minimum lines for a standalone chunk
 
 
@@ -104,7 +106,11 @@ async def split_document_with_llm(content: str, title: str, client, options) -> 
 
 
 def _split_by_headings(content: str, title: str) -> list[str]:
-    """Split by ## headings, then merge smallest adjacent chunks until <= MAX_CHUNKS."""
+    """Split by ## headings, then merge smallest adjacent chunks adaptively.
+
+    The target number of chunks is computed from total content size:
+    target = ceil(total_chars / MAX_CHUNK_CHARS), capped at HARD_CAP_CHUNKS.
+    """
     lines = content.split("\n")
     sections = _extract_sections(lines, level=2)
 
@@ -121,8 +127,15 @@ def _split_by_headings(content: str, title: str) -> list[str]:
         else:
             raw_chunks.append((heading, chunk_text, len(section_lines)))
 
-    # Merge smallest adjacent chunks until we have at most MAX_CHUNKS
-    while len(raw_chunks) > MAX_CHUNKS:
+    # Compute adaptive target based on total content size
+    total_chars = sum(len(t) for _, t, _ in raw_chunks)
+    target_chunks = max(1, math.ceil(total_chars / MAX_CHUNK_CHARS))
+    target_chunks = min(target_chunks, HARD_CAP_CHUNKS)
+    logger.info("Adaptive split: %d chars, target %d chunks (from %d sections)",
+                total_chars, target_chunks, len(raw_chunks))
+
+    # Merge smallest adjacent chunks until we reach the target
+    while len(raw_chunks) > target_chunks:
         # Find the smallest chunk by line count
         min_idx = min(range(len(raw_chunks)), key=lambda i: raw_chunks[i][2])
         # Merge with the smaller neighbor (prefer left, fallback right)

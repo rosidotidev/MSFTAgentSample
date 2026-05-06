@@ -57,6 +57,25 @@ text from the source about that topic. This means:
 - The content field can be very long (thousands of characters). That is expected and correct.
 - When in doubt, INCLUDE MORE rather than less. Redundancy is acceptable; information loss is not.
 
+ENTITY vs CONCEPT (classification rule):
+- An ENTITY is a specific, identifiable noun: a person, organization, tool, class, \
+  product, or named component. The goal of an entity page is ENTITY RESOLUTION — \
+  consolidate all factual mentions of one unique thing into a single reference page. \
+  That's why an entity has a "type" (what kind of thing it is) and a "description" \
+  (what it is in one sentence). Ask: "can I point to this specific thing?"
+- A CONCEPT is an abstract idea, methodology, pattern, or technique. The goal of a \
+  concept page is KNOWLEDGE SYNTHESIS — aggregate scattered explanations into a \
+  high-level summary of how or why something works. \
+  That's why a concept has a "definition" (what it means, not what it is). \
+  Ask: "does this explain a mechanism or approach?"
+- An item must be EITHER an entity OR a concept, never both.
+- "type" field guidance: use "tool" for software libraries, classes, and utilities; \
+  "project" for frameworks, products, and named systems; "company" for organizations; \
+  "person" for individuals; "other" only when none of the above fit.
+- Only extract items that the source SUBSTANTIVELY discusses — items about which the \
+  reader learns something meaningful. Do not extract names that appear only as \
+  incidental mentions, variable names in sample code, or passing references.
+
 GENERAL RULES:
 - ALWAYS produce the output in English. If the source document is in another language, translate
   all fields (summary, key_takeaways, descriptions, definitions, claims) to English.
