@@ -60,6 +60,49 @@ WIKI_LOG_LEVEL=INFO
 
 Third-party loggers (`httpx`, `openai`, `httpcore`) are suppressed to `WARNING` regardless of the configured level. Each executor uses `logging.getLogger(__name__)` so log lines show the originating module.
 
+### Page Visit Limit (`PAGE_VISIT_LIMIT`)
+
+Controls the maximum number of wiki pages the WikiQuerierAgent can read per question. This limits navigation depth to prevent unbounded exploration on vague queries while allowing the agent to follow `## Connections` links for richer answers.
+
+```env
+# .env
+PAGE_VISIT_LIMIT=5
+```
+
+The limit is enforced at two levels:
+1. **Prompt-level (soft)**: the agent's instructions state the budget, encouraging it to stop when enough context is gathered.
+2. **Tool-level (hard)**: `main_query.py` wraps `read_wiki_page` with a counter that returns a "budget exceeded" message after the N-th call, regardless of what the LLM decides.
+
+The counter resets on every new question. If not set, defaults to `5`.
+
+### Minimum Page Ratio (`MIN_PAGE_RATIO`)
+
+Sets a **floor** on how many pages the WikiQuerierAgent must read before answering. Expressed as a fraction of `PAGE_VISIT_LIMIT`:
+
+```env
+# .env
+MIN_PAGE_RATIO=0.6
+```
+
+With `PAGE_VISIT_LIMIT=5` and `MIN_PAGE_RATIO=0.6`, the agent must read at least `ceil(0.6 × 5) = 3` pages before it can answer. This prevents the agent from giving shallow answers after reading only 1-2 pages on broad questions.
+
+The minimum is enforced at prompt level (soft) — the agent's instructions state *"you MUST read at least N pages before answering"*. The floor is always at least 1, even with very low ratios.
+
+If not set, defaults to `0.6` (60%).
+
+> **Note**: `MIN_PAGE_RATIO` is only used by the legacy query pipeline (`main_query.py`). The ADV pipeline uses `ADV_MAX_SEEDS` instead.
+
+### ADV Max Seeds (`ADV_MAX_SEEDS`)
+
+Controls the maximum number of seed pages the ADV Planner can select from the index. The Graph Walker then expands from these seeds via BFS on `## Connections`, up to the `PAGE_VISIT_LIMIT` budget.
+
+```env
+# .env
+ADV_MAX_SEEDS=3
+```
+
+If not set, defaults to `3`.
+
 ### Role of `schema.md`
 
 `schema.md` is a **format reference**, not a program. In a conversational setup (e.g. Claude Code), a CLAUDE.md file acts as the entire orchestration layer — telling the LLM what to do, when, and how. In our agentic solution, orchestration lives in Python code (the workflow), and agent behavior lives in each agent's `INSTRUCTIONS`. 
@@ -68,20 +111,20 @@ Third-party loggers (`httpx`, `openai`, `httpcore`) are suppressed to `WARNING` 
 
 | Section | Content | Used by |
 |---------|---------|---------|
-| `core` | Language rule, directory layout, frontmatter, wikilink format | Integrator |
-| `templates` | Page body templates (source, entity, concept, synthesis) | Writer |
-| `index-log` | Index and log format conventions | Writer |
+| `core` | Language rule, directory layout, frontmatter, wikilink format | (available for reference) |
+| `templates` | Page body templates (source, entity, concept, synthesis) | (available for reference) |
+| `index-log` | Index and log format conventions | (available for reference) |
 
 The shared helper `afw_core/agents/_schema.py` provides two functions:
 - `load_schema(*sections)` — loads specific sections by marker name
 - `load_full_schema()` — loads all sections (core + templates + index-log)
 
 Agent-specific injection:
-- **WikiIntegrator** → `load_schema("core")` — only needs format rules to plan, not full templates
-- **WikiWriter** → `load_full_schema()` — needs everything to produce correct pages
-- **WikiQuerier** → no schema — it reads existing pages, it doesn't create them
+- **SourceReaderAgent** → no schema — produces structured JSON, not wiki pages
+- **WikiQuerierAgent** → no schema — reads existing pages, doesn't create them
+- **WikiLinterAgent** → no schema — analyzes existing pages for issues
 
-This keeps prompt size bounded: the Integrator (which already carries the extraction + tool results) avoids ~60% of the schema payload.
+Note: the Integrator and Writer executors do NOT use the schema — the Integrator works with slugs/paths, and the Writer uses hardcoded templates in Python code.
 
 `schema.md` does NOT contain workflow logic, agent behavior rules, or orchestration instructions.
 
@@ -149,43 +192,53 @@ The one-liner gives the Integrator enough context to decide relevance without re
 ```
 wiki_llm_mfa/                       ← Project root (code)
   main_ingest.py                    ← Entry point: ingest new sources
-  main_query.py                     ← Entry point: answer questions
+  main_query.py                     ← Entry point: legacy query (deprecated)
+  main_query_adv.py                 ← Entry point: ADV query pipeline (recommended)
   main_lint.py                      ← Entry point: wiki health check
+  main_reset.py                     ← Entry point: clear and rebuild wiki
   schema.md                         ← Page format reference (sectioned)
   pytest.ini                        ← Test configuration
   .env.example                      ← Environment variable template
   afw_core/
+    logging_config.py               ← Centralized logging setup
     agents/                         ← Agent definitions (instructions + factory)
       _schema.py                    ← Shared helper: loads schema sections by marker
-      source_reader.py
-      wiki_integrator.py
-      wiki_writer.py
-      wiki_querier.py
-      wiki_linter.py
+      source_reader.py              ← SourceReader agent (LLM extraction)
+      adv_query_planner.py          ← ADV: selects seed pages via structured output
+      adv_answerer.py               ← ADV: iterative answerer (one page per call)
+      wiki_querier.py               ← Legacy: agentic Q&A loop (deprecated)
+      wiki_linter.py                ← WikiLinter agent (semantic lint)
     executors/                      ← Workflow step executors
-      scanner.py
-      batch_reader.py
-      integrator.py
-      writer.py
-      write_validator.py
-      index_updater.py
+      scanner.py                    ← Finds new files in raw/ + questions_approved/
+      dispatcher.py                 ← Per-source loop controller (holds file queue)
+      source_reader.py              ← Chunked extraction with parallel LLM calls
+      splitter.py                   ← Document splitting (heading-based + LLM fallback)
+      integrator.py                 ← Dedup + deterministic integration plan
+      writer.py                     ← Deterministic page writer (no LLM)
+      write_validator.py            ← Post-write validation (no LLM)
+      index_updater.py              ← Rebuilds index.md + appends log entry
+      reset.py                      ← Clears wiki for full rebuild
     tools/                          ← Tools exposed to agents
       wiki_read.py
       wiki_write.py
       wiki_search.py
       wiki_list.py
       log_append.py
+      adv_graph_walker.py           ← ADV: deterministic BFS on ## Connections
     models/                         ← Pydantic data models
-      extraction.py
-      integration_plan.py
+      extraction.py                 ← SourceExtraction model
+      adv_query.py                  ← ADV: ADV_QueryPlan, ADV_PageRequest
     workflows/                      ← Workflow definitions
-      ingest.py
+      ingest.py                     ← Per-source loop workflow
+      reset.py                      ← Reset workflow
   tests/                            ← Test suite
     conftest.py                     ← Shared fixtures (wiki_root, e2e_wiki_root)
     test_scanner.py                 ← Unit: Scanner idempotency
     test_index_updater.py           ← Unit: IndexUpdater deterministic rebuild
     test_write_validator.py         ← Unit: WriteValidator checks
+    test_writer.py                  ← Unit: Writer template output
     test_deterministic_lint.py      ← Unit: broken links, orphans, frontmatter
+    test_source_reader_utils.py     ← Unit: slug matching, merge, dedup, consolidation
     test_e2e_ingest.py              ← E2E: full ingest cycle (mocked LLM)
     test_e2e_lint.py                ← E2E: lint pipeline
     test_e2e_query.py               ← E2E: query pipeline
@@ -245,34 +298,34 @@ The LLM reads the source and produces a structured analysis:
 
 This is "what's in the source". Output: structured JSON.
 
-#### Phase 2 — Integration (WikiIntegrator)
-The WikiIntegrator is an **agent with tools in an agentic loop** — not a one-shot prompt. It does NOT receive all wiki content upfront. Instead, it explores the wiki on-demand:
+#### Phase 2 — Integration (IntegratorExecutor)
+The Integrator is a **hybrid executor**: one lightweight LLM call for semantic slug mapping, then fully deterministic plan construction. It does NOT use an agentic loop.
 
-1. It receives the Phase 1 extraction in its prompt
-2. It calls `read_index()` to see the current wiki map
-3. It reasons about which existing pages are relevant to this new source
-4. It calls `read_wiki_page(path)` for each page it wants to inspect (typically 3-10 pages)
-5. It may iterate — reading more pages if cross-references reveal further connections
-6. Once it has enough context, it produces the integration plan
+**Process:**
+1. It receives the Phase 1 extraction
+2. It scans existing wiki pages on disk (file system walk)
+3. **Deterministic pre-filter**: normalizes slugs (camelCase → kebab-case, plural/singular) and matches exact variants without an LLM call
+4. **Single LLM call**: for remaining unmatched slugs, a lightweight `SlugMapper` agent maps each new entity/concept slug to the most semantically equivalent existing slug, or marks it `"NEW"`
+5. **Deterministic routing**: based on the mapping, each entity/concept goes to either `pages_to_create` or `pages_to_update`
+6. Source page is always created (or replaced if re-ingesting)
 
-The LLM autonomously decides:
-1. **Which pages to create** (source summary, new entities, new concepts)
-2. **Which pages to update** (existing entities/concepts that the new source enriches)
-3. **Which contradictions to flag** (if the new source contradicts claims in existing pages)
-4. **Which new cross-references to add** (links between pages that are now connected)
+Output: an **integration plan** (JSON dict) with `pages_to_create`, `pages_to_update`, `contradictions`, `new_cross_references`.
 
-Output: an **integration plan** (JSON) that is then executed.
+**Why not agentic?** The original design used an agentic loop with `read_index()` + `read_wiki_page()` tool calls. In practice, slug-level dedup is sufficient for the integration decision — the expensive page reads are unnecessary. A single LLM call with the list of existing slugs vs new slugs achieves the same quality at ~10x lower cost and latency. At moderate scale (~100 pages), the slug list fits easily in one prompt.
 
-**Why agentic loop?** The alternative (inject index + all relevant pages into one prompt) doesn't scale. At 100+ pages, the context explodes. With tools, the Integrator loads only what it needs — keeping context bounded regardless of wiki size.
+#### Phase 3 — Writing (WriterExecutor)
+The Writer is **fully deterministic** — zero LLM calls:
+- Builds pages from templates using extraction data
+- Creates source pages with frontmatter, summary, takeaways, and claims
+- Creates entity/concept pages with content, claims, and connections
+- For updates: reads existing page, appends a new "From [[source]]" section, merges the Connections block
+- Connections between pages are derived from co-occurring entities/concepts in claims
 
-#### Phase 3 — Writing (WikiWriter)
-The LLM executes the plan:
-- Writes/updates pages one at a time
-- For each update, reads the current page and produces the updated version
-- Updates `index.md`
-- Appends to `log.md`
+#### Phase 4 — Validation + Index (deterministic)
+- **WriteValidator**: checks frontmatter, wikilink validity, placeholder detection, content presence
+- **IndexUpdater**: rebuilds `index.md` from disk (with one-liner summaries extracted from pages), appends to `log.md`
 
-**Key insight**: Phase 2 is where the intelligence lives. The LLM doesn't "dump" an extraction — it looks at the existing wiki and decides how to evolve it.
+**Key insight**: Phase 2 is where the (minimal) intelligence lives — deciding which pages already exist semantically. Everything else is deterministic template-filling, which is faster, cheaper, and fully reproducible.
 
 ---
 
@@ -280,18 +333,52 @@ The LLM executes the plan:
 
 **Input**: a user question
 
-**How it works**: The WikiQuerierAgent is an LLM with tools in an agentic loop. There is no vector search, no embedding retrieval. The LLM *is* the search engine — it reads the index, reasons about which pages are relevant, and requests them one by one.
+Two query pipelines are available. The **ADV pipeline** (`main_query_adv.py`) is the recommended approach; the **legacy pipeline** (`main_query.py`) is preserved for reference but will be removed in a future version.
+
+#### 3.2.1 ADV Query Pipeline (recommended)
+
+Entry point: `main_query_adv.py`
+
+**Architecture**: 3 deterministic steps, only 2 LLM calls per question (no agentic loop).
+
+```
+Step 1: PLANNER  (LLM, structured output)  → selects seed pages from index
+Step 2: WALKER   (Python, deterministic)    → BFS on ## Connections
+Step 3: ANSWERER (LLM, iterative)           → one call per page, grows draft
+```
 
 **Step-by-step**:
-1. The agent receives the question in its prompt
-2. It calls `read_index()` → gets the full catalog of wiki pages (title + one-liner per page)
-3. The LLM reasons: "To answer this, I need pages X, Y, and Z"
-4. It calls `read_wiki_page(path)` for each relevant page (typically 2-5 pages)
-5. If needed, it calls `search_wiki(query)` to grep for specific terms not obvious from the index
-6. With enough context gathered, it synthesizes the answer with `[[source/page]]` citations
-7. The agent may iterate — if a page references another that seems relevant, it reads that too
+1. The **Planner** receives the full wiki index (in `<wiki_index>` XML tags) and the user question (in `<question>` tags). It returns an `ADV_QueryPlan` — an ordered list of seed page paths with reasons, via structured output.
+2. Seeds are validated against the index — invalid paths are discarded.
+3. The **Graph Walker** (pure Python, no LLM) performs a BFS starting from the seeds. For each page read, it parses `## Connections` and queues linked pages. It stops when the page budget is exhausted.
+4. The **Answerer** is called iteratively — once per page, in read order. Each call receives three XML sections: `<question>`, `<new_page>`, and `<previous_draft>`. The answerer integrates relevant content from the new page into the growing draft, preserving everything already written.
+5. After all pages are processed, the final draft is returned as the answer.
 
-**Pending mechanism**: Every answer is saved as a markdown file in `questions_pending/<slug>.md` with frontmatter (query, date, sources used). The folder is an archive — nothing is ever deleted from it.
+**Why not agentic?** The tool-calling approach in the legacy pipeline gives the LLM full control over navigation, but gpt-4o-mini consistently exhibited two problems:
+- **Shallow answers**: the model stopped reading after 1-2 pages, ignoring the budget.
+- **Path invention**: the model fabricated page paths not present in the index.
+
+The ADV pipeline solves both by separating concerns: the Planner selects seeds (constrained to the index), the Walker navigates deterministically (no LLM can skip pages), and the Answerer focuses only on text integration (no navigation decisions).
+
+**Planner rules**: The planner is instructed to prefer specific pages over generic overviews, read descriptions carefully (not just titles), and copy paths exactly from the index. Maximum seeds controlled by `ADV_MAX_SEEDS` (default: 3).
+
+**Answerer rules**: retrieval-only — no training data, no synthesis, no meta-commentary. If a page adds nothing, the draft is returned unchanged. Empty first draft uses a `"(empty — start a new answer)"` placeholder to prevent prompt confusion.
+
+**Page budget**: controlled by the `PAGE_VISIT_LIMIT` environment variable (default: 5). The Walker reads exactly up to this limit. Seeds count toward the budget.
+
+#### 3.2.2 Legacy Query Pipeline (deprecated)
+
+Entry point: `main_query.py`
+
+> **Note**: this pipeline is preserved for reference and will be removed in a future version. Use `main_query_adv.py` instead.
+
+The WikiQuerierAgent is an LLM with tools in an agentic loop. It reads the index, reasons about which pages are relevant, and navigates the wiki sequentially, following `## Connections` links — ONE `read_wiki_page` call per turn.
+
+The agent must read at least `ceil(MIN_PAGE_RATIO × PAGE_VISIT_LIMIT)` pages before answering (default: 3). Page budget is enforced both in the prompt (soft) and via a tool-level counter (hard).
+
+#### Common: Pending Mechanism & Filing Back
+
+**Pending mechanism**: Every answer (from either pipeline) is saved as a markdown file in `questions_pending/<slug>.md` with frontmatter (query, date, pipeline type). The folder is an archive — nothing is ever deleted from it.
 
 **Filing back (human-curated)**: The user reviews answers in `questions_pending/` at their own pace. If an answer has lasting value (synthesis, comparison, new insight), the user moves it to `questions_approved/`. On the next ingest run, the Scanner picks it up and the Integrator processes it into the wiki — creating/updating synthesis, entity, and concept pages as needed.
 
@@ -334,52 +421,55 @@ This keeps the lint → fix cycle under human control. The LLM diagnoses; the hu
 
 ## 4. Agent Design
 
-### 4.1 SourceReaderAgent
-- **Input**: raw file content
-- **Output**: `SourceExtraction` Pydantic model (guaranteed valid JSON via framework `response_format`)
+### 4.1 SourceReaderAgent + SourceReaderExecutor
+- **Agent input**: raw file content (one chunk at a time)
+- **Agent output**: `SourceExtraction` Pydantic model (guaranteed valid JSON via framework `response_format`)
 - **No tools** — text analysis → structured output only
 - **No wiki context** — works only on the source
 - **Structured output enforcement** — the executor passes `options={"response_format": SourceExtraction}` to `agent.run()`. The framework guarantees a validated Pydantic instance, eliminating JSON parse failures regardless of LLM provider.
 
-### 4.2 WikiIntegratorAgent (the heart of the system)
-- **Input**: source extraction (in prompt)
-- **Output**: integration plan (JSON)
-- **Tools**: `read_index()`, `read_wiki_page(path)`, `list_wiki_pages()`
-- **Runs as an agentic loop** — explores the wiki on-demand via tool calls
-- **This agent is the "brain"** — it decides what to update, create, and flag
-- **Context stays bounded** — it only loads pages it deems relevant, never the full wiki
-- **Deduplication judgment** — the Integrator must not rely only on exact slug matching. When checking the index, it should reason about semantic overlap — if an existing page covers substantially the same entity/concept under a different name or slightly different scope, the Integrator should route to `pages_to_update` (enrich) rather than `pages_to_create`. The index one-liners exist precisely to support this judgment without reading every page.
+**Executor orchestration** (`executors/source_reader.py`):
+- Splits the document into chunks using `splitter.py` (heading-based, with LLM fallback for unstructured docs)
+- Extracts each chunk **in parallel** via `asyncio.gather` — one LLM call per chunk
+- Merges chunk extractions into a single `SourceExtraction` (dedup entities/concepts across chunks)
+- Runs a **consolidation pass** (deterministic) to remove near-duplicate slugs within the same extraction
+- Tags the extraction with `_origin` (`raw` or `questions_approved`) and `_source_path`
+
+### 4.2 IntegratorExecutor (the dedup brain)
+- **Input**: source extraction (JSON from SourceReader)
+- **Output**: integration plan (JSON dict)
+- **LLM usage**: single call to a lightweight `SlugMapper` agent — no tools, no agentic loop
+- **Two-phase dedup**:
+  1. Deterministic pre-filter: normalizes slugs (camelCase/PascalCase/underscores → kebab-case, plural stripping) and matches against existing wiki page slugs
+  2. LLM mapping: remaining unmatched slugs are sent (in one prompt) with the full list of existing slugs; the LLM returns a mapping `{new_slug: existing_slug | "NEW"}`
+- **Deterministic plan construction**: based on the mapping, builds `pages_to_create` and `pages_to_update` lists
+- **Slug renaming**: when a new slug maps to an existing one, the extraction dict is mutated in-place (slug replaced) so downstream Writer finds the right page
+- **No wiki page reads** — only needs the set of existing file paths (from `os.walk`)
 
 Integration plan schema:
 ```json
 {
   "pages_to_create": [
-    {"path": "wiki/sources/x.md", "type": "source", "reason": "..."},
-    {"path": "wiki/entities/y.md", "type": "entity", "reason": "..."}
+    {"path": "wiki/sources/x.md", "page_type": "source", "content_brief": "..."},
+    {"path": "wiki/entities/y.md", "page_type": "entity", "content_brief": "..."}
   ],
   "pages_to_update": [
-    {"path": "wiki/concepts/z.md", "action": "enrich", "what": "adds section about X"},
-    {"path": "wiki/entities/w.md", "action": "add_reference", "what": "new source mentions it"}
+    {"path": "wiki/entities/w.md", "action": "enrich", "detail": "Add info from new source: ..."}
   ],
-  "contradictions": [
-    {"page": "wiki/concepts/foo.md", "existing_claim": "...", "new_claim": "...", "source": "..."}
-  ],
-  "new_cross_references": [
-    {"from": "wiki/entities/a.md", "to": "wiki/concepts/b.md", "reason": "..."}
-  ]
+  "contradictions": [],
+  "new_cross_references": []
 }
 ```
 
-### 4.3 WikiWriterAgent
-- **Input**: for each page in the plan, receives: (1) the plan entry, (2) the **filtered** source extraction, (3) the current page content (read via tool), (4) the list of allowed wikilinks
-- **Output**: written/updated pages
-- **Tools**: `read_wiki_page`, `write_wiki_page`
-- **Follows schema.md for format** — but content is driven by the extraction
-- The plan tells it *what to do*; the extraction gives it *the material*; the current page gives it *what exists*
-- Works one page at a time: reads current → integrates extraction content per the plan → writes the full updated page
-- Does NOT invent content — everything it writes comes from the extraction or the existing page
-- **Content filtering** — the Writer does NOT receive the full extraction. For each page it writes, it receives only the relevant subset: for an entity page, only that entity's data + source metadata; for a source page, only the summary + takeaways + entity/concept names. This keeps the LLM focused and prevents cross-contamination between pages.
-- **Allowed wikilinks (preventive)** — the Writer receives the list of all existing wiki pages (from the current index) plus all pages in the current integration plan. It may only use `[[wikilinks]]` pointing to pages in this set. Links to nonexistent pages must not be created.
+### 4.3 WriterExecutor (deterministic, no LLM)
+- **Input**: integration plan + extraction
+- **Output**: written/updated `.md` files on disk
+- **Zero LLM calls** — pure template-based page generation
+- **Creates pages** using extraction data: frontmatter, summary, key takeaways, content sections, claims, connections
+- **Updates pages** by reading existing content and appending a new `## From [[sources/slug]]` section with the new source's contribution, then merging the `## Connections` block
+- **Connections** are derived deterministically from claim co-occurrence: if two entities/concepts appear in the same claim, they get a bidirectional link with the claim text as description
+- **Content comes directly from extraction** — no summarization, no generation, full verbatim `content` fields
+- **Wikilinks are scoped** to pages that exist on disk or are in the current plan's `pages_to_create`
 
 ### 4.6 WriteValidator (deterministic, no LLM)
 - **Runs after each page write** — pure Python, zero LLM calls
@@ -388,12 +478,39 @@ Integration plan schema:
 - **Purpose**: safety net, not a blocker. The human reviews warnings in the log
 - **Broken link detection (post-mortem)**: any `[[path]]` that does not resolve to an existing `.md` file is flagged. This catches cases where the Writer ignored the allowed list or where a planned page failed to write.
 
-### 4.4 WikiQuerierAgent
-- **Input**: user query
-- **Tools**: `read_wiki_page`, `list_wiki_pages`, `write_wiki_page` (for filing back)
-- **Output**: markdown answer with citations
+### 4.4 ADV Query Agents (recommended pipeline)
 
-### 4.5 WikiLinterAgent
+Three components, no agentic loop:
+
+#### ADV_QueryPlannerAgent
+- **Input**: wiki index + question (in XML tags)
+- **Output**: `ADV_QueryPlan` (Pydantic model) — ordered list of seed pages with reasons
+- **No tools** — single LLM call with structured output
+- **Rules**: prefers specific pages over overviews; reads descriptions, not just titles; copies paths exactly from index; max seeds controlled by `ADV_MAX_SEEDS`
+
+#### Graph Walker (deterministic, no LLM)
+- **Input**: seed paths + page budget + wiki directory
+- **Output**: `OrderedDict[path, content]` — pages in read order
+- **Process**: BFS from seeds, follows `## Connections` links, stops at budget
+- **Pure Python** — regex parsing of `[[wikilinks]]` in Connections sections
+
+#### ADV_AnswererAgent
+- **Input**: question + one page + previous draft (in XML tags)
+- **Output**: updated draft answer
+- **No tools** — single LLM call per page, called iteratively
+- **Rules**: retrieval-only, preserve previous draft, cite with `[[category/slug]]`, no meta-commentary, no training data
+
+### 4.5 WikiQuerierAgent (legacy, deprecated)
+- **Input**: user query
+- **Tools**: `read_wiki_page` (budget-limited wrapper), `list_wiki_pages`, `search_wiki`
+- **Output**: markdown answer with citations
+- **Navigation**: sequential — ONE `read_wiki_page` call per turn, follows `## Connections` links
+- **Page budget**: `PAGE_VISIT_LIMIT` env var (default 5), enforced at prompt level (soft) and tool level (hard counter)
+- **Minimum reads**: `ceil(MIN_PAGE_RATIO × PAGE_VISIT_LIMIT)` pages must be read before answering (default: 3). Enforced at prompt level (soft)
+
+> **Note**: this agent is preserved for reference. Use the ADV pipeline (`main_query_adv.py`) instead.
+
+### 4.6 WikiLinterAgent
 - **Input**: "run lint"
 - **Tools**: `read_wiki_page`, `list_wiki_pages`, `write_log`
 - **Output**: report with findings and suggestions
@@ -436,31 +553,21 @@ class SourceExtraction(BaseModel):
     concepts: list[ConceptMention]
 ```
 
-### IntegrationPlan (WikiIntegrator output)
+### IntegrationPlan (IntegratorExecutor output)
+
+The integration plan is a plain JSON dict (not a Pydantic model) built deterministically by the `IntegratorExecutor`:
+
 ```python
-class PageToCreate(BaseModel):
-    path: str
-    page_type: str               # source|entity|concept
-    content_brief: str           # What to write (guidance for the writer)
-
-class PageToUpdate(BaseModel):
-    path: str
-    action: str                  # enrich|add_reference|flag_contradiction|add_crossref
-    detail: str                  # What to do specifically
-
-class Contradiction(BaseModel):
-    page: str
-    existing_claim: str
-    new_claim: str
-    new_source: str
-    resolution_hint: str         # LLM's suggestion
-
-class IntegrationPlan(BaseModel):
-    pages_to_create: list[PageToCreate]
-    pages_to_update: list[PageToUpdate]
-    contradictions: list[Contradiction]
-    new_cross_references: list[tuple[str, str, str]]  # (from, to, reason)
+# Runtime structure (dict, not a class)
+{
+    "pages_to_create": [{"path": str, "page_type": str, "content_brief": str}],
+    "pages_to_update": [{"path": str, "action": str, "detail": str}],
+    "contradictions": [],      # reserved for future use
+    "new_cross_references": [] # reserved for future use
+}
 ```
+
+The `pages_to_create` and `pages_to_update` lists are consumed by the `WriterExecutor` to decide which pages to write/update.
 
 ---
 
@@ -468,55 +575,65 @@ class IntegrationPlan(BaseModel):
 
 ```
 ┌─────────────┐
-│   Scanner   │  Finds new files in raw/ + questions_approved/
+│   Scanner   │  Finds new files in raw/ + questions_approved/ + lint_approved/
 └──────┬──────┘
        │ file_list
        ▼
-┌──────────────────────────────────────────────────────────────┐
-│              FOR EACH SOURCE FILE (sequential)               │
-│                                                              │
-│  ┌─────────────────┐                                         │
-│  │  SourceReader   │  Read file → extract JSON               │
-│  └──────┬──────────┘                                         │
-│         │ extraction                                         │
-│         ▼                                                    │
-│  ┌─────────────────────┐                                     │
-│  │  WikiIntegrator     │  Read index + relevant pages        │
-│  │  (THE CORE)         │  → produce integration plan         │
-│  └──────┬──────────────┘                                     │
-│         │ plan                                               │
-│         ▼                                                    │
-│  ┌─────────────────┐                                         │
-│  │   WikiWriter    │  Execute plan, write/update pages       │
-│  └──────┬──────────┘                                         │
-│         │                                                    │
-│         ▼                                                    │
-│  ┌─────────────────┐                                         │
-│  │ WriteValidator  │  Deterministic checks (no LLM)          │
-│  └──────┬──────────┘                                         │
-│         │                                                    │
-│         ▼                                                    │
-│  ┌─────────────────┐                                         │
-│  │  IndexUpdater   │  Rebuild index.md + append log entry    │
-│  └─────────────────┘                                         │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────┐
+│   Dispatcher    │◄────────────────────────────────────────────────┐
+│  (loop control) │  Pops one file at a time. When empty → end.     │
+└──────┬──────────┘                                                 │
+       │ file_path                                                  │
+       ▼                                                            │
+┌──────────────────────────────────────────────────────────────┐    │
+│              PER-SOURCE CYCLE (sequential)                    │    │
+│                                                              │    │
+│  ┌─────────────────────┐                                     │    │
+│  │  SourceReader       │  Split → extract chunks (parallel)  │    │
+│  │  (chunked, LLM)     │  → merge → consolidate              │    │
+│  └──────┬──────────────┘                                     │    │
+│         │ extraction                                         │    │
+│         ▼                                                    │    │
+│  ┌─────────────────────┐                                     │    │
+│  │  Integrator         │  Deterministic pre-filter            │    │
+│  │  (1 LLM call)       │  + LLM slug mapping → plan          │    │
+│  └──────┬──────────────┘                                     │    │
+│         │ plan + extraction                                  │    │
+│         ▼                                                    │    │
+│  ┌─────────────────┐                                         │    │
+│  │  Writer          │  Deterministic page creation/update    │    │
+│  │  (no LLM)        │  Templates + extraction data           │    │
+│  └──────┬──────────┘                                         │    │
+│         │                                                    │    │
+│         ▼                                                    │    │
+│  ┌─────────────────┐                                         │    │
+│  │ WriteValidator   │  Deterministic checks (no LLM)         │    │
+│  └──────┬──────────┘                                         │    │
+│         │                                                    │    │
+│         ▼                                                    │    │
+│  ┌─────────────────┐                                         │    │
+│  │  IndexUpdater    │  Rebuild index.md + append log entry   │    │
+│  └──────┬──────────┘                                         │    │
+│         │                                                    │    │
+└─────────┼────────────────────────────────────────────────────┘    │
+          └─────────────────────────────────────────────────────────┘
+                              back-edge to Dispatcher
 ```
 
-**Per-source loop, not a linear pipeline.** The five steps inside the box run sequentially for each source file before moving to the next. This ensures:
-- The Integrator always sees the pages written by previous sources (up-to-date index)
-- The IndexUpdater rebuilds `index.md` after each source, so the next Integrator reads a current catalog
+**Per-source loop with back-edge.** The workflow uses a `WorkflowBuilder` with a back-edge from `IndexUpdater → Dispatcher`. The Dispatcher holds the file queue in instance state and pops one file per cycle. When the queue is empty, it yields output (ending the workflow). This ensures:
+- The Integrator always sees pages written by previous sources (up-to-date index)
+- The IndexUpdater rebuilds `index.md` after each source, so the next cycle reads a current catalog
 - No risk of duplicate page creation across sources
 
-The Scanner runs once at the start. Everything else loops.
+The Scanner runs once at the start. Everything else loops via the Dispatcher.
 
 ---
 
 ## 7. Contradiction Handling
 
-When the WikiIntegrator finds a contradiction:
-1. Documents it in the plan
-2. The WikiWriter inserts it in the page with a visible block:
+When the Integrator detects a contradiction:
+1. Documents it in the plan's `contradictions` list
+2. The Writer inserts it in the page with a visible block:
 
 ```markdown
 > ⚠️ **Contradiction** (detected: 2026-05-02)
@@ -639,7 +756,7 @@ Note: each "From [[source]]" section keeps provenance clear. This is the **prove
 ## 12. What NOT to Do
 
 - ❌ Treat ingest as ETL (extract → transform → load without context)
-- ❌ Rigid JSON schema for writer output (the writer produces free markdown, guided by schema.md)
+- ❌ Rigid JSON schema for writer output (the writer uses Python templates, not LLM generation)
 - ❌ "Never remove content" — sometimes content must be updated/superseded
 - ❌ Blind parallelism on the integration phase (sequentiality needed for coherence)
 - ❌ Summarize and lose detail — preserve provenance

@@ -1,24 +1,68 @@
 """Entry point: query the wiki interactively."""
 
 import asyncio
+import logging
 import os
 import re
 from datetime import datetime
+from typing import Annotated
 
 from dotenv import load_dotenv
+
+from agent_framework import tool
 
 from afw_core.logging_config import setup_logging
 from afw_core.llms.openai import create_client
 from afw_core.agents import wiki_querier
-from afw_core.tools.wiki_read import read_wiki_page, read_index
+from afw_core.tools.wiki_read import read_wiki_page as _read_wiki_page_raw, read_index
 from afw_core.tools.wiki_list import list_wiki_pages
 from afw_core.tools.wiki_search import search_wiki
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_BASE = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_PAGE_VISIT_LIMIT = 5
+_DEFAULT_MIN_PAGE_RATIO = 0.6
 
 
 def _base_dir() -> str:
     return os.environ.get("WIKI_ROOT_DIR", _DEFAULT_BASE)
+
+
+def _page_visit_limit() -> int:
+    return int(os.environ.get("PAGE_VISIT_LIMIT", str(_DEFAULT_PAGE_VISIT_LIMIT)))
+
+
+def _min_page_ratio() -> float:
+    return float(os.environ.get("MIN_PAGE_RATIO", str(_DEFAULT_MIN_PAGE_RATIO)))
+
+
+# --- Page-visit-limited tool wrapper ---
+
+_page_read_counter: int = 0
+_page_read_limit: int = _DEFAULT_PAGE_VISIT_LIMIT
+
+
+def _reset_page_counter() -> None:
+    global _page_read_counter
+    _page_read_counter = 0
+
+
+@tool
+def read_wiki_page(
+    path: Annotated[str, "Relative path to the wiki page, e.g. 'entities/openai'"],
+) -> str:
+    """Read the content of a wiki page. Returns the full markdown content."""
+    global _page_read_counter
+    _page_read_counter += 1
+    if _page_read_counter > _page_read_limit:
+        logger.info("Page budget exceeded (%d/%d) for path=%s", _page_read_counter, _page_read_limit, path)
+        return (
+            f"PAGE BUDGET EXCEEDED ({_page_read_limit} pages already read). "
+            f"Answer now with the pages you already read."
+        )
+    logger.debug("read_wiki_page [%d/%d] path='%s'", _page_read_counter, _page_read_limit, path)
+    return _read_wiki_page_raw(path)
 
 
 def _save_answer(question: str, answer: str) -> str:
@@ -50,10 +94,18 @@ async def main():
     api_key = os.environ["OPENAI_API_KEY"]
     model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o")
 
+    global _page_read_limit
+    _page_read_limit = _page_visit_limit()
+    min_ratio = _min_page_ratio()
+
     client, options = create_client(api_key=api_key, model=model)
 
     tools = [read_index, read_wiki_page, list_wiki_pages, search_wiki]
-    agent = wiki_querier.create_agent(client, options, tools)
+    agent = wiki_querier.create_agent(
+        client, options, tools,
+        page_visit_limit=_page_read_limit,
+        min_page_ratio=min_ratio,
+    )
 
     # Pre-load index so the agent doesn't need to call read_index() every time
     index_path = os.path.join(_base_dir(), "wiki", "index.md")
@@ -96,6 +148,7 @@ async def main():
             f"Source pages are only summaries. Answer using ONLY text from pages you read. "
             f"Do NOT add information that is not in the pages."
         )
+        _reset_page_counter()
         result = await agent.run(prompt)
         answer = result.text
         print(f"\nA: {answer}\n")

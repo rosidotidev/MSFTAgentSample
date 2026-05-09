@@ -2,6 +2,25 @@
 
 Supports chunked extraction: long documents are split into logical sections,
 each extracted independently, then merged into a single extraction.
+
+Pipeline:
+    1. **Chunking** — deterministic split by ## headings; LLM fallback for
+       heading-less documents (> 60 lines).
+    2. **Extraction** — parallel per-chunk extraction via SourceReaderAgent
+       with structured-output; automatic retry without response_format on
+       failure.
+    3. **Multi-chunk merge** (`_merge_extractions`) — fuzzy slug matching
+       across chunks: exact match → plural-insensitive → single-segment
+       prefix.  Items with near-duplicate slugs are merged (content
+       appended, claims unioned).
+    4. **Consolidation** (`_consolidate_extraction`):
+       a. `_dedup_items`  — two-pass dedup: slug-based merge, then
+          content-substring absorption.
+       b. `_absorb_thin_concepts` — thin concepts (< 200 chars, no code)
+          are absorbed into a substantial concept whose slug is a
+          near-duplicate (via `_should_merge_slugs`).
+       c. `_filter_noise_entities` — removes entities typed "other" with
+          short content and no code blocks.
 """
 
 from __future__ import annotations
@@ -337,23 +356,14 @@ def _absorb_thin_concepts(concepts: list[dict]) -> list[dict]:
         return concepts
 
     for tc in thin:
-        tc_norm = _slug_normalize(tc.get("slug", ""))
-        # Find the substantial concept with the longest common prefix
+        tc_slug = tc.get("slug", "")
+        # Find a substantial concept whose slug is a near-duplicate
         best_idx = -1
-        best_prefix_len = 0
         for i, sc in enumerate(substantial):
-            sc_norm = _slug_normalize(sc.get("slug", ""))
-            # Compute common prefix length
-            plen = 0
-            for a, b in zip(tc_norm, sc_norm):
-                if a == b:
-                    plen += 1
-                else:
-                    break
-            if plen > best_prefix_len:
-                best_prefix_len = plen
+            if _should_merge_slugs(tc_slug, sc.get("slug", "")):
                 best_idx = i
-        if best_idx >= 0 and best_prefix_len >= 3:
+                break
+        if best_idx >= 0:
             _merge_item_into(substantial[best_idx], tc)
             logger.debug("Absorbed thin concept '%s' into '%s'",
                          tc.get("slug"), substantial[best_idx].get("slug"))

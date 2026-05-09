@@ -43,7 +43,7 @@ class TestE2EQuery:
         # Now query
         client, options = create_client(api_key=api_key, model=model)
         tools = [read_index, read_wiki_page, list_wiki_pages, search_wiki]
-        agent = wiki_querier.create_agent(client, options, tools)
+        agent = wiki_querier.create_agent(client, options, tools, page_visit_limit=5)
 
         result = await agent.run("What are Python decorators and how do they work?")
         answer = result.text
@@ -63,7 +63,7 @@ class TestE2EQuery:
 
         client, options = create_client(api_key=api_key, model=model)
         tools = [read_index, read_wiki_page, list_wiki_pages, search_wiki]
-        agent = wiki_querier.create_agent(client, options, tools)
+        agent = wiki_querier.create_agent(client, options, tools, page_visit_limit=5)
 
         question = "What is functools.wraps used for?"
         result = await agent.run(question)
