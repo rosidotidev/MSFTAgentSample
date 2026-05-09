@@ -16,6 +16,7 @@ import time
 from agent_framework import Executor, handler, WorkflowContext
 
 from ..agents import slug_mapper
+from ..models.slug_mapping import SlugMapping
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ async def _llm_slug_mapping(
     existing_entity_slugs: list[str],
     existing_concept_slugs: list[str],
 ) -> dict:
-    """Single LLM call to map new slugs to existing ones."""
+    """Single LLM call to map new slugs to existing ones (structured output)."""
     prompt = (
         f"EXISTING entity pages: {json.dumps(existing_entity_slugs)}\n"
         f"EXISTING concept pages: {json.dumps(existing_concept_slugs)}\n\n"
@@ -117,20 +118,16 @@ async def _llm_slug_mapping(
     )
 
     agent = slug_mapper.create_agent(client, options)
-    result = await agent.run(prompt)
-    text = result.text.strip()
-
-    # Strip markdown fences if present
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = text[: text.rfind("```")]
-    text = text.strip()
 
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("LLM slug mapping returned invalid JSON, falling back to all-NEW")
+        result = await agent.run(prompt, options={"response_format": SlugMapping})
+        mapping: SlugMapping = result.value
+        return {
+            "entity_mapping": mapping.entity_mapping,
+            "concept_mapping": mapping.concept_mapping,
+        }
+    except Exception:
+        logger.warning("Structured slug mapping failed, falling back to all-NEW", exc_info=True)
         return {
             "entity_mapping": {s: "NEW" for s in new_entity_slugs},
             "concept_mapping": {s: "NEW" for s in new_concept_slugs},

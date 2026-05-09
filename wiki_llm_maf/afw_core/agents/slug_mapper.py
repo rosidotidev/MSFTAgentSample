@@ -1,7 +1,7 @@
 """Agent: slug mapper — maps new entity/concept slugs to existing wiki pages.
 
-Single LLM call, no tools. Returns a JSON object with entity_mapping and
-concept_mapping. Each new slug is mapped to an existing slug or "NEW".
+Single LLM call, no tools. Uses structured output (response_format)
+to return a SlugMapping Pydantic model.
 """
 
 from agent_framework import Agent
@@ -20,12 +20,6 @@ Rules:
 - A more specific slug can match a more general one if they cover the same ground \
   (e.g., "tools" → "custom-function-tools" when both are about the tool system).
 - When in doubt, return "NEW". Creating a duplicate is cheaper than merging unrelated topics.
-
-Respond with ONLY a valid JSON object (no markdown fences, no commentary):
-{
-  "entity_mapping": {"<new-slug>": "<existing-slug or NEW>", ...},
-  "concept_mapping": {"<new-slug>": "<existing-slug or NEW>", ...}
-}
 """
 
 
