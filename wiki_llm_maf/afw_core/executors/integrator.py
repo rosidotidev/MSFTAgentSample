@@ -13,34 +13,11 @@ import os
 import re
 import time
 
-from agent_framework import Agent, Executor, handler, WorkflowContext
+from agent_framework import Executor, handler, WorkflowContext
+
+from ..agents import slug_mapper
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# LLM prompt for slug mapping (single call)
-# ---------------------------------------------------------------------------
-
-_MAPPING_INSTRUCTIONS = """\
-You are a wiki deduplication assistant. Given a list of EXISTING wiki page slugs \
-and NEW slugs extracted from a source, map each new slug to the most semantically \
-equivalent existing slug, or mark it as "NEW" if no good match exists.
-
-Rules:
-- Match only when the new item clearly covers the SAME topic as the existing page.
-- Partial keyword overlap is NOT enough. "mcp-integration" and "mcp-server-proxies" \
-  are different topics unless they truly cover the same concept.
-- Plural/singular variants are a match (e.g., "tool" ↔ "tools").
-- A more specific slug can match a more general one if they cover the same ground \
-  (e.g., "tools" → "custom-function-tools" when both are about the tool system).
-- When in doubt, return "NEW". Creating a duplicate is cheaper than merging unrelated topics.
-
-Respond with ONLY a valid JSON object (no markdown fences, no commentary):
-{
-  "entity_mapping": {"<new-slug>": "<existing-slug or NEW>", ...},
-  "concept_mapping": {"<new-slug>": "<existing-slug or NEW>", ...}
-}
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -139,14 +116,7 @@ async def _llm_slug_mapping(
         f"NEW concept slugs to map: {json.dumps(new_concept_slugs)}"
     )
 
-    agent = Agent(
-        name="SlugMapper",
-        instructions=_MAPPING_INSTRUCTIONS,
-        client=client,
-        default_options=options,
-        tools=[],
-    )
-
+    agent = slug_mapper.create_agent(client, options)
     result = await agent.run(prompt)
     text = result.text.strip()
 
