@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from agent_framework import tool
 
 from afw_core.logging_config import setup_logging
+from afw_core.console import console
 from afw_core.llms.openai import create_client
 from afw_core.agents import wiki_querier
 from afw_core.tools.wiki_read import read_wiki_page as _read_wiki_page_raw, read_index
@@ -120,6 +121,7 @@ async def main():
         if not question:
             continue
 
+
         # Prepend index to question so agent already knows what pages exist
         # Reorder index: entities and concepts first (they have the richest content)
         lines = index_content.split("\n")
@@ -148,14 +150,15 @@ async def main():
             f"Source pages are only summaries. Answer using ONLY text from pages you read. "
             f"Do NOT add information that is not in the pages."
         )
+        console.step("Querying...")
         _reset_page_counter()
         result = await agent.run(prompt)
         answer = result.text
-        print(f"\nA: {answer}\n")
+        console.result(f"\nA: {answer}\n")
 
         # Save to questions_pending/
         fname = _save_answer(question, answer)
-        print(f"   [saved to questions_pending/{fname}]")
+        console.info(f"[saved to questions_pending/{fname}]")
 
         # Append to log.md
         log_path = os.path.join(_base_dir(), "wiki", "log.md")
@@ -163,7 +166,7 @@ async def main():
         log_entry = f"\n## [{ts}] query | {question}\nAnswer saved: questions_pending/{fname}\n"
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(log_entry)
-        print(f"   [logged to wiki/log.md]\n")
+        console.info(f"[logged to wiki/log.md]\n")
 
 
 if __name__ == "__main__":

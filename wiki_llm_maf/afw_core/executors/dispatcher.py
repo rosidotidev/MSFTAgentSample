@@ -11,6 +11,7 @@ import json
 import logging
 
 from agent_framework import Executor, handler, WorkflowContext
+from ..console import console
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class DispatcherExecutor(Executor):
         next_file = self._files.pop(0)
         self._processed += 1
         fname = next_file.rsplit('/', 1)[-1].rsplit(chr(92), 1)[-1]
-        logger.info("[%d/%d] Dispatching: %s", self._processed, self._total, fname)
+        logger.debug("[%d/%d] Dispatching: %s", self._processed, self._total, fname)
+        console.step(f"[{self._processed}/{self._total}] {fname}")
 
         await ctx.send_message(json.dumps({"file_path": next_file}))

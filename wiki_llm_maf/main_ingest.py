@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from afw_core.logging_config import setup_logging
+from afw_core.console import console
 from afw_core.llms.openai import create_client
 from afw_core.workflows.ingest import build_ingest_workflow
 
@@ -20,16 +21,15 @@ async def main():
 
     workflow = build_ingest_workflow(client, options)
 
-    print("=== WIKI INGEST PIPELINE ===\n")
+    console.banner("WIKI INGEST PIPELINE")
 
     async for event in workflow.run("start", stream=True):
         if event.type == "executor_invoked":
-            print(f">> {event.executor_id}")
+            console.step(f"{event.executor_id}...")
         elif event.type == "output":
-            print(f"\n=== INGEST COMPLETE ===")
-            print(f"Result: {event.data}")
+            console.success(f"Ingest complete — {event.data}")
 
-    print()
+    console.banner_end()
 
 
 if __name__ == "__main__":

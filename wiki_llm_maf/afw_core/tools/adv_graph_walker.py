@@ -13,6 +13,8 @@ import os
 import re
 from collections import OrderedDict
 
+from ..console import console
+
 logger = logging.getLogger(__name__)
 
 # Matches [[category/slug]] in Connections lines
@@ -78,7 +80,8 @@ def walk_graph(
             continue
 
         read[path] = content
-        logger.info("Read [%d/%d]: %s", len(read), budget, path)
+        logger.debug("Read [%d/%d]: %s", len(read), budget, path)
+        console.detail(f"Read [{len(read)}/{budget}]: {path}")
 
         # Discover new pages from Connections
         for conn_path in _parse_connections(content):
@@ -87,7 +90,7 @@ def walk_graph(
                 logger.debug("Queued connection: %s (from %s)", conn_path, path)
 
     if queue:
-        logger.info("Budget reached (%d/%d). Unread in queue: %d",
+        logger.debug("Budget reached (%d/%d). Unread in queue: %d",
                      len(read), budget, len(queue))
 
     return read

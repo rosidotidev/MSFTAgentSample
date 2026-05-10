@@ -10,6 +10,7 @@ import time
 from datetime import date
 
 from agent_framework import Executor, handler, WorkflowContext
+from ..console import console
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +361,8 @@ class WriterExecutor(Executor):
             path = entry["path"]
             page_type = entry.get("page_type", "unknown")
             slug = path.rsplit("/", 1)[-1].replace(".md", "")
-            logger.info("Writing new %s: %s", page_type, path)
+            logger.debug("Writing new %s: %s", page_type, path)
+            console.detail(f"Writing new {page_type}: {path}")
 
             if page_type in ("source", "synthesis"):
                 content = _render_source_page(extraction)
@@ -384,7 +386,8 @@ class WriterExecutor(Executor):
         # Process updates
         for entry in pages_to_update:
             path = entry["path"]
-            logger.info("Updating: %s", path)
+            logger.debug("Updating: %s", path)
+            console.detail(f"Updating: {path}")
 
             existing = _read_file(path)
             if not existing:
@@ -396,5 +399,6 @@ class WriterExecutor(Executor):
             written_pages.append(path)
 
         elapsed = time.time() - t0
-        logger.info("Writer complete: %d page(s) written (%.3fs)", len(written_pages), elapsed)
+        logger.debug("Writer complete: %d page(s) written (%.3fs)", len(written_pages), elapsed)
+        console.info(f"{len(written_pages)} page(s) written ({elapsed:.3f}s)")
         await ctx.send_message(json.dumps({"written_pages": written_pages, "extraction": extraction}))

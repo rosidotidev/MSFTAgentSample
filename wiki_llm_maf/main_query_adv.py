@@ -19,6 +19,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from afw_core.logging_config import setup_logging
+from afw_core.console import console
 from afw_core.llms.openai import create_client
 from afw_core.agents import adv_query_planner, adv_answerer
 from afw_core.models.adv_query import ADV_QueryPlan
@@ -120,8 +121,8 @@ async def main():
     valid_paths = _build_index_path_set(index_content)
 
     print("Wiki Querier (ADV) ready. Type your question (or 'quit' to exit).")
-    print(f"  Budget: {budget} pages | Max seeds: {max_seeds}")
-    print(f"  Previous entry point: main_query.py (tool-calling approach)\n")
+    console.info(f"Budget: {budget} pages | Max seeds: {max_seeds}")
+    print()
 
     while True:
         question = input("Q: ").strip()
@@ -137,7 +138,8 @@ async def main():
             f"Select the most relevant pages (max {max_seeds}) from the index."
         )
 
-        logger.info("Step 1/3: Planning (LLM)...")
+        logger.debug("Step 1/3: Planning (LLM)...")
+        console.step("Step 1/3 — Planning (LLM)...")
         try:
             plan_result = await planner.run(
                 planner_prompt,
@@ -171,18 +173,22 @@ async def main():
 
         for i, page in enumerate(plan.pages):
             marker = "✓" if page.path in valid_paths else "✗"
-            logger.info("  Seed %d: [%s] %s — %s", i + 1, marker, page.path, page.reason)
+            logger.debug("  Seed %d: [%s] %s — %s", i + 1, marker, page.path, page.reason)
+            console.detail(f"Seed {i + 1}: [{marker}] {page.path} — {page.reason}")
+
+        console.info(f"{len(valid_seeds)} seed(s) selected")
 
         # ── STEP 2: WALK (deterministic) ─────────────────────────────
-        logger.info("Step 2/3: Graph walk (budget=%d, seeds=%d)...", budget, len(valid_seeds))
+        logger.debug("Step 2/3: Graph walk (budget=%d, seeds=%d)...", budget, len(valid_seeds))
+        console.step("Step 2/3 — Graph walk...")
         pages_read = walk_graph(valid_seeds, budget, wiki_dir)
 
-        logger.info("Walk complete: %d pages read", len(pages_read))
-        for path in pages_read:
-            logger.info("  Read: %s", path)
+        logger.debug("Walk complete: %d pages read", len(pages_read))
+        console.info(f"{len(pages_read)} page(s) read")
 
         # ── STEP 3: ANSWER (iterative LLM) ──────────────────────────
-        logger.info("Step 3/3: Answering (iterative, %d pages)...", len(pages_read))
+        logger.debug("Step 3/3: Answering (iterative, %d pages)...", len(pages_read))
+        console.step(f"Step 3/3 — Answering ({len(pages_read)} pages)...")
         draft = ""
         for i, (path, content) in enumerate(pages_read.items(), 1):
             if draft:
@@ -198,7 +204,8 @@ async def main():
             )
             answer_result = await answerer.run(answerer_prompt)
             draft = answer_result.text
-            logger.info("  Integrated page %d/%d: %s", i, len(pages_read), path)
+            logger.debug("  Integrated page %d/%d: %s", i, len(pages_read), path)
+            console.detail(f"Integrated page {i}/{len(pages_read)}: {path}")
         answer = draft.strip()
 
         # Detect empty or poisoned drafts

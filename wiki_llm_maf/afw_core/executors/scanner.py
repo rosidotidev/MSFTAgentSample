@@ -8,6 +8,7 @@ import os
 import re
 
 from agent_framework import Executor, handler, WorkflowContext
+from ..console import console
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class ScannerExecutor(Executor):
                 if fname.endswith(".md") and fname not in processed:
                     new_files.append(os.path.join(lint_dir, fname))
 
-        logger.info("Scanner found %d new file(s) to ingest.", len(new_files))
+        logger.debug("Scanner found %d new file(s) to ingest.", len(new_files))
+        console.info(f"Found {len(new_files)} new file(s)")
         logger.debug("Files: %s", [os.path.basename(f) for f in new_files])
         await ctx.send_message(json.dumps({"new_files": new_files}))

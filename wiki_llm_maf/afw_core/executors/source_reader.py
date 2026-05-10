@@ -35,6 +35,7 @@ from agent_framework import Executor, handler, WorkflowContext
 from ..agents import source_reader
 from ..models.extraction import SourceExtraction
 from .splitter import split_document, split_document_with_llm
+from ..console import console
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ class SourceReaderExecutor(Executor):
         file_path: str = data["file_path"]
         fname = os.path.basename(file_path)
 
-        logger.info("Reading: %s", fname)
+        logger.debug("Reading: %s", fname)
+        console.detail(f"Reading: {fname}")
         logger.debug("Input: %s", input[:500])
         t0 = time.time()
 
@@ -66,12 +68,14 @@ class SourceReaderExecutor(Executor):
 
         # If deterministic split returned a single chunk and doc is large, try LLM split
         if len(chunks) == 1 and content.count("\n") > 60:
-            logger.info("Document has no headings and is large — using LLM split")
+            logger.debug("Document has no headings and is large — using LLM split")
+            console.detail("Document has no headings — using LLM split")
             chunks = await split_document_with_llm(
                 content, doc_title, self._client, self._options
             )
 
-        logger.info("Processing %d chunk(s) for: %s", len(chunks), fname)
+        logger.debug("Processing %d chunk(s) for: %s", len(chunks), fname)
+        console.detail(f"Processing {len(chunks)} chunk(s)")
 
         # --- Extract each chunk (parallel) ---
         async def _extract_chunk(i: int, chunk: str) -> dict | None:
@@ -123,7 +127,8 @@ class SourceReaderExecutor(Executor):
         extraction = _consolidate_extraction(extraction)
 
         elapsed = time.time() - t0
-        logger.info("Extraction complete: %s (%.1fs, %d chunks)", extraction.get('title', fname), elapsed, len(chunks))
+        logger.debug("Extraction complete: %s (%.1fs, %d chunks)", extraction.get('title', fname), elapsed, len(chunks))
+        console.info(f"{extraction.get('title', fname)} \u2714 ({elapsed:.1f}s, {len(chunks)} chunks)")
         logger.debug("Entities: %d, Concepts: %d", len(extraction.get('entities', [])), len(extraction.get('concepts', [])))
 
         # --- MONITOR: dump extraction ---
@@ -222,8 +227,9 @@ def _merge_extractions(extractions: list[dict], fname: str) -> dict:
         [concept for ext in extractions for concept in ext.get("concepts", [])]
     )
 
-    logger.info("Merged %d extractions → %d entities, %d concepts",
+    logger.debug("Merged %d extractions → %d entities, %d concepts",
                 len(extractions), len(merged["entities"]), len(merged["concepts"]))
+    console.detail(f"Merged {len(extractions)} extractions → {len(merged['entities'])} entities, {len(merged['concepts'])} concepts")
     return merged
 
 
@@ -408,6 +414,7 @@ def _consolidate_extraction(extraction: dict) -> dict:
     entities = _dedup_items(entities)
     extraction["entities"] = entities
 
-    logger.info("Consolidation: concepts %d → %d, entities %d → %d",
+    logger.debug("Consolidation: concepts %d → %d, entities %d → %d",
                 concepts_before, len(concepts), entities_before, len(entities))
+    console.detail(f"Consolidation: concepts {concepts_before} → {len(concepts)}, entities {entities_before} → {len(entities)}")
     return extraction

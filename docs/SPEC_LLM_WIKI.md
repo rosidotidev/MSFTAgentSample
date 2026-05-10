@@ -60,6 +60,38 @@ WIKI_LOG_LEVEL=INFO
 
 Third-party loggers (`httpx`, `openai`, `httpcore`) are suppressed to `WARNING` regardless of the configured level. Each executor uses `logging.getLogger(__name__)` so log lines show the originating module.
 
+### Console Verbosity (`WIKI_VERBOSITY`)
+
+Controls the user-facing console output level, independent of Python logging. The console provides structured, colour-coded output with pipeline phases, progress, and results.
+
+| Level | Value | Output |
+|-------|-------|--------|
+| `SILENT` | `0` | Errors + final result only. Ideal for automated pipelines. |
+| `NORMAL` | `1` | Pipeline phases with progress, key results, timing (default). |
+| `VERBOSE` | `2` | All internal details: slug mapping, merge decisions, chunk processing. |
+
+```env
+# .env
+WIKI_VERBOSITY=1
+```
+
+The console system (`afw_core/console.py`) uses a singleton `console` instance with these methods:
+
+| Method | Verbosity | Purpose |
+|--------|-----------|---------|
+| `banner(title)` | NORMAL+ | Top-level pipeline banner with box drawing |
+| `step(msg)` | NORMAL+ | Major pipeline phase (⏵ marker) |
+| `info(msg)` | NORMAL+ | Secondary info inside a step |
+| `detail(msg)` | VERBOSE only | Internal detail (dim text) |
+| `success(msg)` | ALL | Green ✔ — final result |
+| `warning(msg)` | ALL | Yellow ⚠ — warnings |
+| `error(msg)` | ALL | Red ✗ — errors |
+| `result(msg)` | ALL | Plain text block for answers |
+
+Python `logging` remains in all executors for `WARNING`/`ERROR`/`DEBUG` internals. Console calls are added alongside `logger.info()` for user-facing messages — they do not replace logging.
+
+`WIKI_MONITOR` remains a separate concern (JSON diagnostic dumps ≠ console verbosity).
+
 ### Page Visit Limit (`PAGE_VISIT_LIMIT`)
 
 Controls the maximum number of wiki pages the WikiQuerierAgent can read per question. This limits navigation depth to prevent unbounded exploration on vague queries while allowing the agent to follow `## Connections` links for richer answers.

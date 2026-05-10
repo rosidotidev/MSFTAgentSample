@@ -8,6 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from afw_core.logging_config import setup_logging
+from afw_core.console import console
 from afw_core.llms.openai import create_client
 from afw_core.agents import wiki_linter
 from afw_core.tools.wiki_read import read_wiki_page, read_index
@@ -95,15 +96,15 @@ async def main():
     api_key = os.environ["OPENAI_API_KEY"]
     model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o")
 
-    print("=== WIKI LINT ===\n")
+    console.banner("WIKI LINT")
 
     # Phase 1: deterministic checks (no LLM, instant)
-    print("— Deterministic checks —")
+    console.step("Deterministic checks...")
     det_issues = _deterministic_lint()
     if det_issues:
         for issue in det_issues:
-            print(f"  - {issue}")
-        print(f"\n  → {len(det_issues)} deterministic issue(s) found.\n")
+            console.detail(f"- {issue}")
+        console.info(f"{len(det_issues)} deterministic issue(s) found.")
 
         # Save deterministic issues to lint_pending/
         base = _base_dir()
@@ -120,10 +121,10 @@ async def main():
                 f.write(content)
         print(f"  Saved {len(det_issues)} deterministic issue(s) to lint_pending/\n")
     else:
-        print("  All deterministic checks passed.\n")
+        console.info("All deterministic checks passed.")
 
     # Phase 2: LLM-based semantic analysis
-    print("— Semantic analysis (LLM) —")
+    console.step("Semantic analysis (LLM)...")
     client, options = create_client(api_key=api_key, model=model)
 
     tools = [read_index, read_wiki_page, list_wiki_pages, search_wiki, append_log]
@@ -143,13 +144,13 @@ async def main():
             text = text[: text.rfind("```")]
         suggestions = json.loads(text.strip())
     except (json.JSONDecodeError, ValueError):
-        print(f"  (Could not parse LLM output as JSON, raw output below)")
-        print(raw_output)
+        console.warning("Could not parse LLM output as JSON")
+        console.result(raw_output)
 
     if suggestions:
-        print(f"\n  → {len(suggestions)} semantic suggestion(s):\n")
+        console.info(f"{len(suggestions)} semantic suggestion(s):")
         for s in suggestions:
-            print(f"  [{s.get('severity', '?').upper()}] {s.get('type', '?')}: {s.get('description', '')}")
+            console.detail(f"[{s.get('severity', '?').upper()}] {s.get('type', '?')}: {s.get('description', '')}")
 
         # Save each suggestion to lint_pending/
         base = _base_dir()
@@ -165,9 +166,9 @@ async def main():
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        print(f"\n  Saved to lint_pending/ — review and copy to lint_approved/ to action them.")
+        console.info("Saved to lint_pending/ \u2014 review and copy to lint_approved/ to action them.")
     else:
-        print("  No semantic issues found.")
+        console.info("No semantic issues found.")
 
     # Append to log.md
     log_path = os.path.join(_base_dir(), "wiki", "log.md")
@@ -176,7 +177,8 @@ async def main():
     log_entry = f"\n## [{ts_log}] lint | {len(det_issues)} deterministic + {len(suggestions)} semantic issues\n"
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(log_entry)
-    print(f"\n[logged to wiki/log.md]")
+    console.success(f"Lint complete: {total_issues} issue(s) found")
+    console.info("[logged to wiki/log.md]")
 
 
 def _parse_deterministic_issue(issue: str) -> dict:

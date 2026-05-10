@@ -5,6 +5,7 @@ import asyncio
 from dotenv import load_dotenv
 
 from afw_core.workflows.reset import build_reset_workflow
+from afw_core.console import console
 
 
 async def main():
@@ -16,15 +17,15 @@ async def main():
 
     workflow = build_reset_workflow()
 
-    print("=== WIKI RESET ===\n")
+    console.banner("WIKI RESET")
 
     async for event in workflow.run("start", stream=True):
         if event.type == "executor_invoked":
-            print(f"\n>> {event.executor_id} started...")
+            console.step(f"{event.executor_id}...")
         elif event.type == "executor_completed":
-            print(f"   ✓ {event.executor_id} completed")
+            console.detail(f"{event.executor_id} completed")
 
-    print("\n=== RESET COMPLETE ===")
+    console.success("Reset complete")
 
 
 if __name__ == "__main__":

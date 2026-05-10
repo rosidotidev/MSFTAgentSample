@@ -17,6 +17,7 @@ from agent_framework import Executor, handler, WorkflowContext
 
 from ..agents import slug_mapper
 from ..models.slug_mapping import SlugMapping
+from ..console import console
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,8 @@ class IntegratorExecutor(Executor):
             return
 
         title = extraction.get("title", extraction.get("file_name", "unknown"))
-        logger.info("Integrating: %s", title)
+        logger.debug("Integrating: %s", title)
+        console.detail(f"Integrating: {title}")
         t0 = time.time()
 
         existing = _existing_wiki_pages()
@@ -203,20 +205,22 @@ class IntegratorExecutor(Executor):
             concept_auto, concept_remaining = _pre_filter_slugs(new_concept_slugs, existing_concept_slugs)
 
             if entity_auto or concept_auto:
-                logger.info(
+                logger.debug(
                     "Pre-filter matched: %d entities, %d concepts (deterministic)",
                     len(entity_auto), len(concept_auto),
                 )
+                console.detail(f"Pre-filter matched: {len(entity_auto)} entities, {len(concept_auto)} concepts (deterministic)")
             entity_map.update(entity_auto)
             concept_map.update(concept_auto)
 
             # Phase 2: LLM mapping for remaining slugs
             if (entity_remaining or concept_remaining) and self._client:
-                logger.info(
+                logger.debug(
                     "LLM slug mapping: %d+%d remaining vs %d+%d existing",
                     len(entity_remaining), len(concept_remaining),
                     len(existing_entity_slugs), len(existing_concept_slugs),
                 )
+                console.detail(f"LLM slug mapping: {len(entity_remaining)}+{len(concept_remaining)} remaining vs {len(existing_entity_slugs)}+{len(existing_concept_slugs)} existing")
                 mapping = await _llm_slug_mapping(
                     self._client, self._options,
                     entity_remaining, concept_remaining,
@@ -224,7 +228,8 @@ class IntegratorExecutor(Executor):
                 )
                 entity_map.update(mapping.get("entity_mapping", {}))
                 concept_map.update(mapping.get("concept_mapping", {}))
-                logger.info("Mapping result: %s", json.dumps(mapping))
+                logger.debug("Mapping result: %s", json.dumps(mapping))
+                console.detail(f"Mapping result: {json.dumps(mapping)}")
             elif entity_remaining or concept_remaining:
                 logger.info("No LLM client — remaining slugs will be created.")
         else:
@@ -238,7 +243,8 @@ class IntegratorExecutor(Executor):
                 continue
             mapped = entity_map.get(slug)
             if mapped and mapped != "NEW" and mapped in existing_entity_set:
-                logger.info("Entity merge: '%s' → '%s'", slug, mapped)
+                logger.debug("Entity merge: '%s' → '%s'", slug, mapped)
+                console.detail(f"Entity merge: '{slug}' → '{mapped}'")
                 entity["_original_slug"] = slug
                 entity["slug"] = mapped          # rename so writer finds it
                 pages_to_update.append({
@@ -261,7 +267,8 @@ class IntegratorExecutor(Executor):
                 continue
             mapped = concept_map.get(slug)
             if mapped and mapped != "NEW" and mapped in existing_concept_set:
-                logger.info("Concept merge: '%s' → '%s'", slug, mapped)
+                logger.debug("Concept merge: '%s' → '%s'", slug, mapped)
+                console.detail(f"Concept merge: '{slug}' → '{mapped}'")
                 concept["_original_slug"] = slug
                 concept["slug"] = mapped         # rename so writer finds it
                 pages_to_update.append({
@@ -284,7 +291,8 @@ class IntegratorExecutor(Executor):
         }
 
         elapsed = time.time() - t0
-        logger.info("Plan: %d create, %d update (%.3fs)", len(pages_to_create), len(pages_to_update), elapsed)
+        logger.debug("Plan: %d create, %d update (%.3fs)", len(pages_to_create), len(pages_to_update), elapsed)
+        console.info(f"Plan: {len(pages_to_create)} create, {len(pages_to_update)} update ({elapsed:.3f}s)")
 
         # --- MONITOR: dump plan ---
         from ..logging_config import is_monitor_enabled, get_diagnostics_dir

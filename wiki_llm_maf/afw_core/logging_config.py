@@ -1,9 +1,11 @@
 """Configurable logging for the wiki system.
 
 Reads from environment:
-  WIKI_LOG_LEVEL — standard log verbosity (ERROR|WARNING|INFO|DEBUG). Default: INFO
-  WIKI_MONITOR  — if "true", dump intermediate artifacts (extraction, plan, writer input)
-                  to <WIKI_ROOT_DIR>/tmp/diagnostics/ for post-mortem inspection.
+  WIKI_LOG_LEVEL  — standard log verbosity (ERROR|WARNING|INFO|DEBUG). Default: INFO
+  WIKI_MONITOR    — if "true", dump intermediate artifacts (extraction, plan, writer input)
+                    to <WIKI_ROOT_DIR>/tmp/diagnostics/ for post-mortem inspection.
+  WIKI_VERBOSITY  — console output level (0=SILENT, 1=NORMAL, 2=VERBOSE). Default: 1.
+                    See afw_core/console.py for details.
 """
 
 import logging

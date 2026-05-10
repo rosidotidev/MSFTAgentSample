@@ -7,6 +7,7 @@ import os
 import shutil
 
 from agent_framework import Executor, handler, WorkflowContext
+from ..console import console
 
 _DEFAULT_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -55,18 +56,18 @@ class ResetExecutor(Executor):
                 count += 1
             total += count
             cleared[rel] = count
-            print(f"  {rel}/ — {count} item(s) removed")
+            console.detail(f"{rel}/ \u2014 {count} item(s) removed")
 
         # Reset index.md
         index_path = os.path.join(base, "wiki", "index.md")
         with open(index_path, "w", encoding="utf-8") as f:
             f.write("---\ntitle: Wiki Index\ntype: index\n---\n\n# Wiki Index\n")
-        print("  wiki/index.md — reset")
+        console.detail("wiki/index.md \u2014 reset")
 
         # Clear log.md
         log_path = os.path.join(base, "wiki", "log.md")
         with open(log_path, "w", encoding="utf-8") as f:
             f.write("")
-        print("  wiki/log.md — cleared")
+        console.detail("wiki/log.md \u2014 cleared")
 
         await ctx.send_message(json.dumps({"reset": True, "items_removed": total, "dirs": cleared}))
