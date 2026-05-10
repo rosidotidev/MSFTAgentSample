@@ -5,7 +5,7 @@ Each call integrates new information from one page into the growing answer.
 
 Supports three detail levels (selected by the user via query prefix):
 - brief    (!b) — 1-3 sentences, only the key fact(s)
-- standard (!s, default) — focused, readable, may paraphrase freely
+- standard (!s, default) — precise answer with specific details, may paraphrase
 - full     (!f) — preserves everything verbatim, never shortens
 """
 
@@ -52,15 +52,17 @@ INSTRUCTIONS_BRIEF = (
 
 INSTRUCTIONS_STANDARD = (
     _HEADER
-    + "Your job: produce a FOCUSED UPDATED ANSWER that integrates relevant "
-    + "content from the new page into the previous draft.\n\n"
+    + "Your job: produce an UPDATED ANSWER that DIRECTLY and PRECISELY "
+    + "answers the question, using specific facts and details from the "
+    + "new page.\n\n"
     + "<rules>\n"
-    + "- Write a clear, readable answer. You may paraphrase and reorganize \\\n"
-    + "  freely — prioritize clarity over completeness.\n"
-    + "- Include only what is relevant to the question. Leave out tangential \\\n"
-    + "  information even if it appears in the page.\n"
-    + "- You may rewrite the previous draft to improve clarity when adding \\\n"
-    + "  new information.\n"
+    + "- ANSWERING THE QUESTION is your primary goal. Include the specific \\\n"
+    + "  facts, details, data, and examples that address what was asked. \\\n"
+    + "  Do not give vague or generic summaries.\n"
+    + "- You may paraphrase and reorganize for readability, but NEVER at \\\n"
+    + "  the cost of losing details that help answer the question.\n"
+    + "- Include relevant details even if they make the answer longer. \\\n"
+    + "  Omit only what is truly tangential to the question.\n"
     + _RULES_COMMON
     + "</rules>\n"
 )
