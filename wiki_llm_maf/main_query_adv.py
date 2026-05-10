@@ -30,6 +30,29 @@ logger = logging.getLogger(__name__)
 _DEFAULT_BASE = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_PAGE_VISIT_LIMIT = 5
 _DEFAULT_MAX_SEEDS = 3
+_DEFAULT_DETAIL_LEVEL = "standard"
+
+_PREFIXES = {
+    "!b ": "brief",
+    "!s ": "standard",
+    "!f ": "full",
+}
+
+_HELP_TEXT = (
+    "  Prefixes:  !b = brief  |  !s = standard  |  !f = full/detailed  |  (default = standard)\n"
+    "  Commands:  ?  or  !help  = show this help\n"
+)
+
+
+def _parse_detail_prefix(raw_question: str) -> tuple[str, str]:
+    """Strip a detail-level prefix from the question.
+
+    Returns (clean_question, detail_level).
+    """
+    for prefix, level in _PREFIXES.items():
+        if raw_question.startswith(prefix):
+            return raw_question[len(prefix):].strip(), level
+    return raw_question, _DEFAULT_DETAIL_LEVEL
 
 
 def _base_dir() -> str:
@@ -115,12 +138,12 @@ async def main():
     client, options = create_client(api_key=api_key, model=model)
 
     planner = adv_query_planner.create_agent(client, options, max_seeds=max_seeds)
-    answerer = adv_answerer.create_agent(client, options)
 
     index_content = _load_index()
     valid_paths = _build_index_path_set(index_content)
 
     print("Wiki Querier (ADV) ready. Type your question (or 'quit' to exit).")
+    print(_HELP_TEXT, end="")
     console.info(f"Budget: {budget} pages | Max seeds: {max_seeds}")
     print()
 
@@ -128,8 +151,16 @@ async def main():
         question = input("Q: ").strip()
         if question.lower() in ("quit", "exit", "q"):
             break
+        if not question or question in ("?", "!help"):
+            if question:
+                print(_HELP_TEXT, end="")
+            continue
+
+        question, detail_level = _parse_detail_prefix(question)
         if not question:
             continue
+        answerer = adv_answerer.create_agent(client, options, detail_level=detail_level)
+        console.detail(f"Detail level: {detail_level}")
 
         # ── STEP 1: PLAN (LLM) ──────────────────────────────────────
         planner_prompt = (

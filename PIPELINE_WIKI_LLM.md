@@ -61,7 +61,7 @@ Step 3: ANSWERER (LLM)    — iterative: one call per page, grows draft answer
       seeds ──────▶ BFS read ──────▶ iterative integration
 ```
 
-Max seeds: `ADV_MAX_SEEDS` (default 3). Page budget: `PAGE_VISIT_LIMIT` (default 5).
+Max seeds: `ADV_MAX_SEEDS` (default 3). Page budget: `PAGE_VISIT_LIMIT` (default 5). Answer detail level: user-controlled via `!b` (brief) / `!f` (full) prefix, default `standard`.
 
 #### Legacy Pipeline (deprecated) — `main_query.py`
 
@@ -210,6 +210,17 @@ pipenv run python main_query.py
 ```
 
 Interactive loop. Type a question, get a grounded answer with `[[page]]` citations. Answers are saved to `questions_pending/`.
+
+**Answer detail level** — prefix the question to control verbosity:
+
+| Prefix | Level | Example |
+|--------|-------|---------|
+| _(none)_ | `standard` | `Q: What is the agent framework?` |
+| `!b ` | `brief` | `Q: !b Who created it?` |
+| `!s ` | `standard` | `Q: !s What is the agent framework?` |
+| `!f ` | `full` | `Q: !f Explain the full architecture` |
+
+Type `?` or `!help` during the session to see available prefixes.
 
 ### Lint the wiki
 

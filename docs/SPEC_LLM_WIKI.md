@@ -396,6 +396,17 @@ The ADV pipeline solves both by separating concerns: the Planner selects seeds (
 
 **Answerer rules**: retrieval-only — no training data, no synthesis, no meta-commentary. If a page adds nothing, the draft is returned unchanged. Empty first draft uses a `"(empty — start a new answer)"` placeholder to prevent prompt confusion.
 
+**Answer detail level**: The user controls answer verbosity via a query prefix. The answerer agent is instantiated with the corresponding instruction set — no classification LLM call is needed.
+
+| Prefix | Level | Behavior |
+|--------|-------|----------|
+| _(none)_ | `standard` | Focused, readable. May paraphrase and reorganize freely. Only relevant content. |
+| `!b ` | `brief` | 1-3 sentences. Only the key fact(s). Omits tangential details. |
+| `!s ` | `standard` | Explicit standard (same as no prefix). |
+| `!f ` | `full` | Preserves everything verbatim. Never shortens or removes from previous draft. |
+
+The `?` or `!help` commands in the interactive loop display available prefixes.
+
 **Page budget**: controlled by the `PAGE_VISIT_LIMIT` environment variable (default: 5). The Walker reads exactly up to this limit. Seeds count toward the budget.
 
 #### 3.2.2 Legacy Query Pipeline (deprecated)
@@ -530,7 +541,11 @@ Three components, no agentic loop:
 - **Input**: question + one page + previous draft (in XML tags)
 - **Output**: updated draft answer
 - **No tools** — single LLM call per page, called iteratively
-- **Rules**: retrieval-only, preserve previous draft, cite with `[[category/slug]]`, no meta-commentary, no training data
+- **Detail levels**: three instruction sets (`brief`, `standard`, `full`) selected by the user via query prefix (`!b`, default, `!f`). The agent is re-created per question with the matching instructions.
+- **Rules (common)**: retrieval-only, cite with `[[category/slug]]`, no meta-commentary, no training data
+- **Rules (brief)**: max 1-3 sentences, omit tangential details, don't expand if already answered
+- **Rules (standard)**: focused and readable, may paraphrase/reorganize, include only what's relevant
+- **Rules (full)**: preserve everything, copy verbatim, never shorten
 
 ### 4.5 WikiQuerierAgent (legacy, deprecated)
 - **Input**: user query
